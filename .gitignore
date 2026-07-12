@@ -1,0 +1,22 @@
+.env
+.claude/
+.DS_Store
+.venv/
+.pytest_cache/
+.ruff_cache/
+.idea/
+.tmp/
+/tmp/
+__pycache__/
+*.py[cod]
+/.coverage
+/htmlcov/
+/data/
+/frontend/data/
+secrets/
+# druks/secrets is source (the encrypted-column fields), not stored secrets.
+!backend/druks/secrets/
+# Frontend build output — produced by `npm --prefix frontend run build`.
+/dist/
+# ADRs are private, kept out of the repo.
+/docs/adr/

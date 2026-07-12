@@ -1,0 +1,6 @@
+from druks.db import Base
+
+# SQLAlchemy models for this extension — subclass ``Base``. Every table name must
+# start with "{{ name }}_": the platform scopes this extension's migrations to that
+# prefix (its own history in ``alembic_version_{{ name }}``) and enforces it at boot.
+# After adding a model: ``druks makemigrations {{ name }} -m "..." && druks init-db``.

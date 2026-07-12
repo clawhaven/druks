@@ -1,0 +1,120 @@
+[project]
+name = "druks"
+version = "0.0.1"
+description = "Platform for durable agent orchestration."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Paulo Alvarado Garcia" }]
+keywords = ["agents", "dbos", "durable-execution", "orchestration", "workflows"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "asyncssh>=2.22",
+    "drukbox-python-sdk>=0.0.6",
+    # 0.138 adds app.frontend(), which serves an extension's shipped dist/.
+    "fastapi>=0.138.0",
+    "githubkit[auth-app]>=0.15.5",
+    "httpx>=0.28.0",
+    "jinja2>=3.1",
+    "pydantic>=2.12.0",
+    "pydantic-settings>=2.14.2",
+    "pyyaml>=6.0",
+    "sqlalchemy>=2.0",
+    "uvicorn>=0.38.0",
+    "uuid-utils>=0.16.0",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.13",
+    "dbos>=2.26",
+    "croniter>=6.2.2",
+    "redis>=8",
+    "blinker>=1.9",
+    "apprise>=1.9",
+    "cryptography>=48.0.1",
+]
+
+[project.urls]
+Documentation = "https://github.com/clawhaven/druks/tree/main/docs"
+Issues = "https://github.com/clawhaven/druks/issues"
+Repository = "https://github.com/clawhaven/druks"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.408",
+    "pytest>=8.4.0",
+    "pytest-asyncio>=1.3.0",
+    "ruff>=0.14.0",
+]
+
+[project.scripts]
+druks = "druks.cli:main"
+
+# Extensions are discovered here. An extension (in-tree today, a separate package
+# tomorrow) registers one Extension subclass; the platform loads them at startup and
+# walks each one's package for capabilities. Adding an extension is one entry, not
+# edits across the platform wiring.
+[project.entry-points."druks.extensions"]
+build = "druks.build.extension:Build"
+core = "druks.core.extension:Core"
+usage = "druks.usage.extension:Usage"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/druks"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/backend/druks",
+    "/backend/templates",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/README.md",
+]
+
+# Ship the prompt templates dir alongside the wheel. ``druks.core.prompts``
+# resolves the path relative to ``backend/`` so the directory has to land
+# at the same height as the ``druks`` package in the installed tree.
+[tool.hatch.build.targets.wheel.force-include]
+"backend/templates" = "templates"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Alembic-generated revisions are machine-written; don't hand-lint them.
+extend-exclude = ["backend/migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI dependency markers are the documented way to declare injected
+# parameters; B008 (no function calls in argument defaults) is a false
+# positive for them.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+asyncio_mode = "auto"
+pythonpath = ["backend", "backend/tests"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+include = ["backend"]
+# Test code stays on extraPaths for import resolution but out of the checked set:
+# its loose mocks (call_args, SimpleNamespace-as-Request) are false-positive noise
+# that drowns the real signal in backend/druks.
+exclude = ["backend/tests"]
+# The proof extension (backend/tests/druks-field_notes) is a standalone package; its
+# root is on the path so its intra-package imports and the tests that load it resolve.
+extraPaths = ["backend", "backend/tests", "backend/tests/druks-field_notes"]
+typeCheckingMode = "standard"
+reportAssignmentType = "warning"

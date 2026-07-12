@@ -1,0 +1,74 @@
+from datetime import datetime, timedelta
+
+from sqlalchemy import Index, delete, select
+from sqlalchemy.orm import Mapped, mapped_column
+
+from druks.db import Base, db_session
+
+
+class UsageScrape(Base):
+    __tablename__ = "usage_scrapes"
+    __table_args__ = (Index("usage_scrapes_harness_time_idx", "harness", "scraped_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    harness: Mapped[str]  # a registered harness name (get_harnesses())
+    scraped_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
+    # True when at least one metric came out of the parser. False covers
+    # both "scrape failed entirely" (timeout, not signed in, binary
+    # missing) and "scrape ran but format changed and nothing matched".
+    parse_ok: Mapped[bool] = mapped_column(default=True)
+    raw_output: Mapped[str | None]
+    # Short classification string: ``timeout`` | ``not_installed`` |
+    # ``auth_required`` | ``parse_failed`` | ``unknown``. ``None`` when
+    # the scrape parsed cleanly.
+    error: Mapped[str | None]
+    # Subscription tier when the CLI surfaces it (e.g. ``pro``, ``max``,
+    # ``plus``). Display-only.
+    plan_tier: Mapped[str | None]
+    # Five-hour rolling window. Claude exposes this directly; Codex
+    # doesn't have a 5h concept yet so it stays null for the codex row.
+    five_hour_percent_left: Mapped[int | None]
+    five_hour_resets_at: Mapped[datetime | None]
+    # Weekly window — both CLIs expose this.
+    week_percent_left: Mapped[int | None]
+    week_resets_at: Mapped[datetime | None]
+    # Unmetered plan (Codex business/enterprise with unlimited credits).
+    # The window percentages above are synthesized permanently-full
+    # buckets when this is set — the UI renders "unmetered" instead of
+    # a quota bar that never moves.
+    unlimited: Mapped[bool] = mapped_column(default=False)
+
+    @classmethod
+    def latest_for(cls, harness: str) -> "UsageScrape | None":
+        stmt = select(cls).where(cls.harness == harness).order_by(cls.scraped_at.desc()).limit(1)
+        return db_session().execute(stmt).scalar_one_or_none()
+
+    @classmethod
+    def history_for(cls, harness: str, *, since: datetime) -> list["UsageScrape"]:
+        """Successful scrapes for ``harness`` since ``since``, oldest first.
+        Feeds the usage page's trend sparklines / burn-rate math, so
+        failed scrapes (no percentages) are excluded."""
+        stmt = (
+            select(cls)
+            .where(cls.harness == harness)
+            .where(cls.scraped_at >= since)
+            .where(cls.parse_ok.is_(True))
+            .order_by(cls.scraped_at.asc())
+        )
+        return list(db_session().execute(stmt).scalars())
+
+    def save(self) -> None:
+        if not self.scraped_at:
+            self.scraped_at = Base.utc_now()
+        session = db_session()
+        session.add(self)
+        session.flush()
+
+    @classmethod
+    def prune_older_than(cls, *, days: int) -> int:
+        cutoff = Base.utc_now() - timedelta(days=days)
+        stmt = delete(cls).where(cls.scraped_at < cutoff)
+        session = db_session()
+        result = session.execute(stmt)
+        session.flush()
+        return result.rowcount

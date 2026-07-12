@@ -1,0 +1,96 @@
+from typing import Any, ClassVar
+
+from fastapi.responses import JSONResponse, Response
+
+from druks.signals import publish
+from druks.webhooks import Webhook, verify_hmac_sha256
+
+_REVIEW_ACTION = {"APPROVED": "approve", "CHANGES_REQUESTED": "request_changes"}
+
+
+class GitHubEvents(Webhook):
+    """Verifies the GitHub HMAC, then emits ``pr.review_submitted`` /
+    ``pr.closed`` — normalized facts, no WorkItem knowledge."""
+
+    provider = "github"
+    category = "events"
+
+    SIGNATURE_HEADER: ClassVar[str] = "x-hub-signature-256"
+    EVENT_HEADER: ClassVar[str] = "x-github-event"
+    DELIVERY_HEADER: ClassVar[str] = "x-github-delivery"
+
+    def request_is_authentic(self) -> bool:
+        verify_hmac_sha256(
+            self.raw_body,
+            self.request.headers.get(self.SIGNATURE_HEADER),
+            self.settings.webhook_secret,
+        )
+        return True
+
+    def delivery_key(self) -> str:
+        return self.request.headers[self.DELIVERY_HEADER]
+
+    def get_action(self) -> str:
+        event = self.request.headers[self.EVENT_HEADER]
+        action = self.data.get("action")
+        return f"{event}_{action}" if action else event
+
+    async def on_pull_request_review_submitted(self) -> Response:
+        sender = self.data["sender"]
+        if sender["type"] != "User":
+            return _accepted()
+        review, pull_request = self.data["review"], self.data["pull_request"]
+        action = _REVIEW_ACTION.get(review["state"].upper())
+        if not action:
+            return _accepted()
+        await publish(
+            "pr.review_submitted",
+            repo=_repo_name(self.data),
+            pr_number=pull_request["number"],
+            payload={
+                "branch": pull_request["head"]["ref"],
+                "action": action,
+                "reviewer": sender["login"],
+                "body": review["body"] or "",  # body is nullable on an approve
+            },
+        )
+        return _accepted()
+
+    async def on_pull_request_closed(self) -> Response:
+        pull_request = self.data["pull_request"]
+        await publish(
+            "pr.closed",
+            repo=_repo_name(self.data),
+            pr_number=pull_request["number"],
+            payload={
+                "branch": pull_request["head"]["ref"],
+                "merged": pull_request["merged"],
+            },
+        )
+        return _accepted()
+
+    async def on_push(self) -> Response:
+        # Normalized facts only — which paths matter is each subscriber's call.
+        repository = self.data["repository"]
+        await publish(
+            "repo.pushed",
+            repo=repository["full_name"],
+            to_default_branch=self.data["ref"] == f"refs/heads/{repository['default_branch']}",
+            paths=sorted(
+                {
+                    path
+                    for commit in self.data["commits"]
+                    for changeset in (commit["added"], commit["removed"], commit["modified"])
+                    for path in changeset
+                }
+            ),
+        )
+        return _accepted()
+
+
+def _accepted() -> Response:
+    return JSONResponse({"accepted": True})
+
+
+def _repo_name(payload: dict[str, Any]) -> str:
+    return payload["repository"]["full_name"]

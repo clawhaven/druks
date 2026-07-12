@@ -1,0 +1,58 @@
+name: On Pull Request Backend
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".dockerignore"
+      - ".github/workflows/on-pull-request-backend.yml"
+      - "backend/**"
+      - "pyproject.toml"
+      - "uv.lock"
+
+concurrency:
+  group: on-pull-request-backend-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    # The suite talks to a real Postgres (the harness runs each test in a rolled-back
+    # transaction; the durable tests create their own databases). Defaults in
+    # backend/tests match localhost:5432 with druks/druks/druks, so this mirrors local
+    # dev (deploy/compose.dev.yaml) and needs no env wiring. Image tracks deploy/compose.yaml.
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_USER: druks
+          POSTGRES_PASSWORD: druks
+          POSTGRES_DB: druks
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U druks"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          python-version: "3.11"
+      - run: uv sync --locked --dev
+      - run: uv run ruff check backend
+      - run: uv run pytest backend/
+      # The out-of-tree proof extension, installed editable exactly as an author's
+      # ``pip install -e`` would — its real entry point registers here, so the loader
+      # discovers it with no test seam. Runs after the main suite (whose in-tree
+      # extension set the proof must not join) and re-verifies every author surface
+      # against the actual install: boot, discovery, migrations, routes, run start,
+      # feed formatting, settings.
+      - run: uv pip install -e backend/tests/druks-field_notes
+      - run: uv run pytest backend/tests/test_proof_extension.py backend/tests/test_proof_extension_install.py backend/tests/test_proof_extension_migration.py
