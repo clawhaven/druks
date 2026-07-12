@@ -1,0 +1,185 @@
+# Full Druks stack. Host networking is required: services reach Redis on
+# 127.0.0.1 and use the host's tailscaled to SSH into sandbox VMs.
+
+x-druks: &druks
+  image: ghcr.io/clawhaven/druks:${DRUKS_TAG:-latest}
+  # Run as the deploy user (who owns the mounted ~/.claude, ~/.codex, and data
+  # dir), not root, so everything written under the data mount stays owned by
+  # (and writable to) the deploy user. install.sh writes DRUKS_UID/DRUKS_GID
+  # into .env from `id -u` / `id -g`.
+  user: "${DRUKS_UID:?set DRUKS_UID in .env — run install.sh}:${DRUKS_GID:?set DRUKS_GID in .env — run install.sh}"
+  restart: unless-stopped
+  network_mode: host
+  env_file:
+    - ./.env
+  environment:
+    DRUKS_REDIS_URL: ${DRUKS_REDIS_URL:-redis://127.0.0.1:6379/0}
+    DRUKS_DATABASE_URL: ${DRUKS_DATABASE_URL:-postgresql+psycopg://${DRUKS_POSTGRES_USER:-druks}:${DRUKS_POSTGRES_PASSWORD}@127.0.0.1:5432/${DRUKS_POSTGRES_DB:-druks}}
+    DRUKS_DATA_DIR: /app/data
+    # Container view of the CLI config mounts below. Subscription credentials
+    # live in the DB (dashboard connect flow) — these carry config only.
+    DRUKS_CLAUDE_CONFIG_DIR: /harnesses/claude
+    DRUKS_CODEX_CONFIG_DIR: /harnesses/codex
+    # Operator-installed skills live in the (writable) data volume — the
+    # settings UI installs collections here and druks pushes them into every
+    # VM at both ~/.claude/skills and ~/.codex/skills.
+    DRUKS_SKILLS_DIR: /app/data/skills
+    DRUKS_SANDBOX_KEYS_DIR: /app/sandbox-keys
+    # Encrypts stored secrets (MCP tokens, OAuth grants) at rest; the app
+    # refuses to boot without it. `druks setup` generates one into .env.
+    DRUKS_SECRETS_KEY: ${DRUKS_SECRETS_KEY:?set DRUKS_SECRETS_KEY in .env — druks setup generates one}
+    GITHUB_OPERATOR_PRIVATE_KEY_PATH: /secrets/github_operator.pem
+    GITHUB_REVIEWER_PRIVATE_KEY_PATH: /secrets/github_reviewer.pem
+  volumes:
+    - ${DRUKS_DATA_HOST_DIR:-${DRUKS_DATA_DIR:-${HOME}/druks-data}}:/app/data
+    # claude/codex config dirs (settings.json/plugins, config.toml/AGENTS.md),
+    # carried into each sandbox at push time. Auth never reads them — tokens
+    # live in the DB and rotate there — so the mounts are read-only.
+    - ${DRUKS_CLAUDE_HOME:-${HOME}/.claude}:/harnesses/claude:ro
+    - ${DRUKS_CODEX_HOME:-${HOME}/.codex}:/harnesses/codex:ro
+    - ${DRUKS_CLAUDE_JSON:-${HOME}/.claude.json}:/harnesses/.claude.json:ro
+    # Operator-installed skills live under the /app/data mount (DRUKS_SKILLS_DIR
+    # → /app/data/skills), writable and owned by the deploy user — no separate
+    # mount needed.
+    # Shared so a reattaching worker reads the key the acquirer wrote.
+    - druks_sandbox_keys:/app/sandbox-keys
+    - ${GITHUB_OPERATOR_PEM:?set GITHUB_OPERATOR_PEM}:/secrets/github_operator.pem:ro
+    - ${GITHUB_REVIEWER_PEM:?set GITHUB_REVIEWER_PEM}:/secrets/github_reviewer.pem:ro
+  depends_on:
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
+# Shared config for the drukbox sandbox control-plane containers
+# (service / janitor), gated behind the ``remote`` profile — a local
+# install runs drukbox on the host instead. They use SQLite: one file on a
+# shared volume so both containers see the same DB (separate containers, so a
+# per-container relative path would be two different files). Host
+# networking for the service's HTTP API + the host tailscaled.
+x-drukbox: &druksox
+  image: ${DRUKS_SANDBOX_SERVICE_IMAGE:-ghcr.io/clawhaven/drukbox:latest}
+  network_mode: host
+  # Runs as the image's non-root appuser (uid 1001). The shared SQLite
+  # volume must therefore be owned by 1001 — a fresh named volume mounts
+  # root-owned, so install.sh chowns it (one-time host-side step; /data is
+  # OUR mount path, not drukbox's concern, so the image stays untouched).
+  env_file:
+    - ./.env
+  environment:
+    # Absolute path (four slashes) on the shared volume mounted at /data.
+    # Overrides any DATABASE_URL in .env so the stack can't drift back to
+    # the removed Postgres.
+    DATABASE_URL: sqlite+aiosqlite:////data/drukbox.db
+  volumes:
+    - drukbox_data:/data
+
+services:
+  web:
+    <<: *druks
+    # DBOS runs embedded here: this one process serves HTTP and executes durable
+    # workflows + schedules (concurrency is bounded by the DBOS queue, not the
+    # process count — host networking pins it to one port). A redeploy interrupts
+    # in-flight workflows, which recover durably. If execution outgrows one
+    # process, add a port-free worker tier of DBOS executors.
+    #
+    # Schema is applied out of band, not on boot: install.sh runs
+    # ``docker compose run --rm web druks init-db`` on install and upgrade.
+    command:
+      [
+        "uvicorn",
+        "druks.api.app:app",
+        "--host",
+        "${DRUKS_WEB_BIND_HOST:-127.0.0.1}",
+        "--port",
+        "8001",
+      ]
+
+  sandbox-service:
+    <<: *druksox
+    profiles: ["remote"]
+    restart: unless-stopped
+
+  # Periodic janitor — drukbox ships no scheduler, so loop with sleep; a
+  # real timer belongs in the drukbox service/image, not in compose.
+  sandbox-janitor:
+    <<: *druksox
+    profiles: ["remote"]
+    restart: unless-stopped
+    entrypoint:
+      - sh
+      - -c
+      - "while true; do .venv/bin/python -m hosts.janitor || true; sleep 60; done"
+    # The image HEALTHCHECK probes the HTTP API — on host networking the
+    # janitor would health-check the *service's* port, doubling /healthz
+    # traffic and reporting a status that isn't its own.
+    healthcheck:
+      disable: true
+
+  caddy:
+    # Stock Caddy — the external auth gate + webhook TLS. A local install
+    # skips it (dashboard reached directly on 127.0.0.1:8001), so it lives
+    # in the ``remote`` profile. Caddyfile is fetched next to this compose
+    # file by install.sh.
+    image: caddy:2.10-alpine
+    profiles: ["remote"]
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      DRUKS_UPSTREAM: ${DRUKS_UPSTREAM:-127.0.0.1:8001}
+      DRUKS_DASHBOARD_EMAIL: ${DRUKS_DASHBOARD_EMAIL:?set DRUKS_DASHBOARD_EMAIL}
+      DRUKS_AUTH_HEADER: ${DRUKS_AUTH_HEADER:-X-ExeDev-Email}
+      # ``:-`` so an empty .env value still collapses to the inert loopback
+      # default — Caddy treats set-but-empty as a real (broken) site address.
+      DRUKS_WEBHOOK_HOST: ${DRUKS_WEBHOOK_HOST:-http://127.0.0.1:8081}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      POSTGRES_USER: ${DRUKS_POSTGRES_USER:-druks}
+      POSTGRES_PASSWORD: ${DRUKS_POSTGRES_PASSWORD:?set DRUKS_POSTGRES_PASSWORD in .env — druks setup generates one}
+      POSTGRES_DB: ${DRUKS_POSTGRES_DB:-druks}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DRUKS_POSTGRES_USER:-druks}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:8.2-alpine
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - "60"
+      - "1000"
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  caddy_data:
+  caddy_config:
+  redis_data:
+  postgres_data:
+  # Drukbox's SQLite DB, shared across migrate/service/janitor.
+  drukbox_data:
+  druks_sandbox_keys:

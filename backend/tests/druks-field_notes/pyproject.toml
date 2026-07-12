@@ -1,0 +1,19 @@
+[project]
+name = "druks-field_notes"
+version = "0.1.0"
+description = "Field notes — the out-of-tree proof extension for druks."
+requires-python = ">=3.11"
+dependencies = ["druks"]
+
+# Local checkout of druks core; point at the published package once one exists.
+[tool.uv.sources]
+druks = { path = "../../..", editable = true }
+
+# The platform discovers this extension here — installing the package is the
+# whole registration.
+[project.entry-points."druks.extensions"]
+field_notes = "druks_field_notes.extension:FieldNotes"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

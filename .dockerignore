@@ -1,0 +1,38 @@
+# Keep the build context lean + deterministic. The Dockerfile installs
+# deps from uv.lock and builds the SPA from source; nothing below is
+# needed in the image, and several would bloat or poison it.
+
+# Python / uv local env + caches
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+.pyright/
+.claude/
+.tmp/
+tmp/
+
+# Node — the frontend stage runs its own `npm ci`
+frontend/node_modules/
+
+# Build outputs (regenerated in-image)
+static/
+dist/
+
+# Runtime state — never bake an operator's DB/artifacts/secrets in
+data/
+secrets/
+*.sqlite3
+*.sqlite3-*
+
+# Local config + VCS
+.env
+.env.*
+.git/
+.github/
+
+# Docs / dev-only (but NOT the root README.md — pyproject's
+# `readme = "README.md"` needs it present for the wheel build).
+docs/
+deploy/

@@ -1,0 +1,10 @@
+from fastapi import APIRouter
+
+# Every APIRouter declared in a ``routes`` module mounts under /api/{{ name }}.
+# For DB access in a handler use ``from druks.db import db_session``.
+router = APIRouter(tags=["{{ name }}"])
+
+
+@router.get("/status")
+async def get_status() -> dict[str, str]:
+    return {"extension": "{{ name }}"}

@@ -1,0 +1,82 @@
+{
+	admin off
+}
+
+http://:8000 {
+	bind 127.0.0.1
+
+	log {
+		output stdout
+		format console
+	}
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), geolocation=(), microphone=()"
+	}
+
+	@webhooks {
+		method POST
+		path /_external/*
+	}
+	handle @webhooks {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy {$DRUKS_UPSTREAM}
+	}
+
+	# Identity is an upstream-injected trusted header matched against the
+	# allowlisted email. DRUKS_AUTH_HEADER defaults to exe.dev's; point it at
+	# another proxy's header (Teleport: X-Forwarded-Email, Cloudflare Access:
+	# Cf-Access-Authenticated-User-Email, …) to swap the auth edge with no
+	# code change.
+	# The backend serves everything behind the gate — the API, the SPA at /,
+	# extension frontends at /app/<name>. Cache policy for the served
+	# frontends lives with their server (api/app.py), not at the edge.
+	@dashboard_user header {$DRUKS_AUTH_HEADER:X-ExeDev-Email} {$DRUKS_DASHBOARD_EMAIL}
+	handle @dashboard_user {
+		reverse_proxy {$DRUKS_UPSTREAM}
+	}
+
+	# Header present but email not allowlisted → deny.
+	@wrong_user header {$DRUKS_AUTH_HEADER:X-ExeDev-Email} *
+	handle @wrong_user {
+		respond "Access denied." 403
+	}
+
+	# No identity header at all. exe.dev passes unauthenticated traffic
+	# through and relies on this redirect to its SSO; proxies like Teleport
+	# intercept upstream and never reach here, so this stays exe-shaped.
+	handle {
+		redir https://{host}/__exe.dev/login?redirect={uri} 302
+	}
+}
+
+# Public webhook ingress — set DRUKS_WEBHOOK_HOST to a hostname with an
+# A-record at this box and Caddy auto-provisions TLS for it. Serves the
+# HMAC-verified /_external/* paths and nothing else: no dashboard routes,
+# no identity header, so the trusted-header gate above stays unforgeable.
+# Unset → an inert loopback listener; deployments whose edge already
+# carries webhooks (exe.dev port-share) need nothing here.
+{$DRUKS_WEBHOOK_HOST:http://127.0.0.1:8081} {
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+	}
+	@webhooks {
+		method POST
+		path /_external/*
+	}
+	handle @webhooks {
+		request_body {
+			max_size 1MB
+		}
+		reverse_proxy {$DRUKS_UPSTREAM}
+	}
+	handle {
+		respond 404
+	}
+}

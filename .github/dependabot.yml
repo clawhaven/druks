@@ -1,0 +1,51 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python-runtime:
+        dependency-type: production
+      python-development:
+        dependency-type: development
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      frontend-runtime:
+        dependency-type: production
+      frontend-development:
+        dependency-type: development
+    ignore:
+      # openapi-typescript pins typescript ^5.x; TS7 breaks npm ci
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # track the node engine, don't run ahead of it
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # hold python feature-version jumps (3.x is semver-minor) until the whole
+      # toolchain moves deliberately; 3.11 patches still flow
+      - dependency-name: "python"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # CI + frontend target node 22; hold major jumps of the build-stage image
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker
+    directory: /deploy/sandbox
+    schedule:
+      interval: weekly

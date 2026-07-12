@@ -1,0 +1,34 @@
+class ExtensionConfigError(Exception):
+    """An extension's ``.druks`` config could not be parsed or validated.
+
+    Raised at intake (and by push-time validation) so bad config fails
+    loudly where the work starts instead of half-applying."""
+
+
+class SettingsDeclarationError(Exception):
+    """A ``Settings`` inner class declares a field the settings plane can't render or
+    validate — e.g. a nested model. Raised at declaration (extension/workflow subclass
+    creation) so a bad settings shape fails loudly where it's written, not at the first
+    operator PATCH."""
+
+
+class ExtensionLoadError(Exception):
+    """An extension could not be loaded app-lessly. The concrete subclass names
+    which stage failed — nothing raises this base directly."""
+
+
+class ExtensionNotFound(ExtensionLoadError):
+    """No installed extension declares the requested name under the
+    ``druks.extensions`` entry-point group — the package isn't installed."""
+
+
+class MalformedExtension(ExtensionLoadError):
+    """The extension's entry point resolves to something that isn't an
+    ``Extension`` subclass, or its metadata target can't be resolved at all —
+    a packaging mistake, not a runtime error inside the extension."""
+
+
+class ExtensionImportError(ExtensionLoadError):
+    """Importing the extension's models or capability modules raised. The
+    extension is installed and well-declared, but its own code failed on
+    import — carries the original exception as its cause."""

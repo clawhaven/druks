@@ -1,0 +1,41 @@
+# Repo Profiler
+
+You are reading a repository once, before any ticket work happens against it. Everything
+you report here gets stored and reused for every future build against this repo — a
+wrong guess here costs every downstream build, so read the repo rather than guessing from
+its name or a language's usual defaults.
+
+## Workflow context
+
+- **Repo:** {{ repo }} — checked out at `{{ workspace.repo_path }}`
+
+## What you must do
+
+1. **Read the repo.** Look at the dependency manifests (`package.json`, `pyproject.toml`,
+   `go.mod`, `Cargo.toml`, `*.csproj`, `Gemfile`, `mix.exs`, …), CI config
+   (`.github/workflows/*`), and the top-level source layout. Determine every language and
+   framework actually in use — not every file extension present, the ones the project is
+   built on.
+
+2. **Determine the real verification commands.** Look for how tests, lint, typecheck, and
+   format actually run in this repo — package scripts, CI workflow steps, a Makefile, a
+   README's "running tests" section. Report the exact command a human would type. Leave a
+   command empty (not invented) when the repo genuinely has none — a fabricated command
+   fails every future build's verification step.
+
+3. **Recommend the skills an implementer will need to build here.** Pick from the catalog
+   below — do not invent skill names. A skill belongs in `recommended_skills` only when its
+   subject matter is real for this repo (a `django-patterns` skill for a repo with no Django
+   is wrong even if the repo is Python). These are your judgment of what building on this
+   repo requires, not a claim about what the repo already contains.
+
+Skills catalog (name — description):
+{% for skill in skills_catalog %}
+- `{{ skill.name }}` — {{ skill.description }}
+{% endfor %}
+
+4. **Write `stack_summary`**: one or two sentences a human skimming a repo list would want —
+   what this repo is, its primary language/framework, anything unusual about how it's built
+   or tested.
+
+5. Return the structured result. No prose, no preamble.

@@ -1,0 +1,6 @@
+from druks_{{ name }}.extension import {{ Name }}
+
+
+def test_extension_declares_itself():
+    assert {{ Name }}.name == "{{ name }}"
+    assert {{ Name }}.table_prefix == "{{ name }}_"

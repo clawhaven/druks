@@ -1,0 +1,8 @@
+from druks.signals import subscribe  # noqa: F401
+
+# React to platform signals with declarative filters (equality against the published
+# kwargs; ``__`` descends into dicts). Defining a handler registers it — no body guards.
+#
+# @subscribe("run.finished", subject__type="{{ name }}")
+# async def on_finished(*, subject: dict, **_: object) -> None:
+#     ...

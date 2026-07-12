@@ -1,0 +1,52 @@
+# Dev infrastructure only — Postgres + Redis for a laptop; the app itself
+# runs on the host (`uv run uvicorn ...`). Standard ports on loopback;
+# if something on your machine already owns one, override the host side
+# (e.g. `DRUKS_POSTGRES_PORT=5433`) and point DRUKS_DATABASE_URL /
+# DRUKS_REDIS_URL at it.
+#
+#   docker compose -f deploy/compose.dev.yaml up -d
+#
+# Postgres carries two databases: `druks` is the test database (the
+# pytest suite DROPs and rebuilds its schema every session — conftest and
+# CI both default to localhost:5432/druks), `druks_dev` is where the dev
+# server keeps its data, out of the suite's blast radius.
+
+# Explicit project name: the default would be this directory's basename
+# ("deploy"), which any other repo's deploy/ compose would collide with.
+name: druks-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DRUKS_POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: druks
+      POSTGRES_PASSWORD: druks
+      POSTGRES_DB: druks
+    volumes:
+      - dev_postgres_data:/var/lib/postgresql/data
+      - ./compose.dev.init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U druks"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:8.2-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DRUKS_REDIS_PORT:-6379}:6379"
+    volumes:
+      - dev_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  dev_postgres_data:
+  dev_redis_data:
