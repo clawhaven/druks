@@ -6,6 +6,7 @@ from druks.build.extension import Build
 from druks.build.models import Project, ProjectRepo, WorkItem
 from druks.build.scoping.contracts import ScopeBriefOutput
 from druks.db import db_session
+from druks.durable.dbos_state import subject_filter
 from druks.durable.enums import RunState
 from druks.ticketing.datastructures import Ticket
 from druks.workflows import Gate, Run, Workflow
@@ -60,7 +61,7 @@ class Scope(Workflow):
         stmt = select(Run).where(
             Run.kind == cls.kind,
             Run.state == RunState.PENDING_INPUT.value,
-            Run.subject["id"].as_integer() == work_item_id,
+            subject_filter(Run.id, "work_item", str(work_item_id)),
         )
         return db_session().scalars(stmt).first()
 

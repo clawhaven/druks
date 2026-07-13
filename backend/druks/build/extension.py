@@ -17,6 +17,7 @@ from druks.build.contracts import (
 from druks.build.models import WorkItem
 from druks.build.scoping.contracts import ScopeBriefOutput
 from druks.db import db_session
+from druks.durable.dbos_state import subject_filter
 from druks.durable.enums import RunState
 from druks.events import Event, FeedItem
 from druks.extensions import Extension
@@ -221,7 +222,7 @@ class Build(Extension):
         if not run:
             newest_scope = (
                 select(Run)
-                .where(Run.kind == Scope.kind, Run.subject["id"].as_integer() == item.id)
+                .where(Run.kind == Scope.kind, subject_filter(Run.id, "work_item", str(item.id)))
                 .order_by(Run.created_at.desc())
                 .limit(1)
             )

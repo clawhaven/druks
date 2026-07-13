@@ -8,11 +8,12 @@ import pytest
 from druks.agents import Agent, AgentOutput
 from druks.database import configure_session, get_session
 from druks.durable import FatalError, Run, RunState
+from druks.durable.dbos_state import workflow_status
 from druks.durable.engine import configure_engine, init_dbos, launch, shutdown
 from druks.extensions.registry import agents, workflows
 from druks.workflows import Gate, Workflow, step
 from pydantic import BaseModel
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 
 PG_BASE = os.environ.get("DRUKS_TEST_PG", "postgresql://druks:druks@localhost:5432")
 DB = "druks_durable_test"
@@ -314,6 +315,13 @@ async def test_subject_gate_parks_unchanged(rt):
     wfid = await rt.ConfirmFlow.start(subject={"type": "widget", "id": 636363})
     parked = await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.PENDING_INPUT)
     assert parked.input_gate == "confirm"
+    # start() stamped the subject as workflow attributes — the keying every
+    # runs-for-a-subject query reads; the id normalizes to a string.
+    with rt.engine.connect() as conn:
+        attributes = conn.execute(
+            select(workflow_status.c.attributes).where(workflow_status.c.workflow_uuid == wfid)
+        ).scalar_one()
+    assert attributes == {"subject_type": "widget", "subject_id": "636363"}
 
     await parked.resume(action="go")
     await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FINISHED)
@@ -555,9 +563,9 @@ async def test_subject_shape_validation(rt):
             await rt.SubjectFlow.start(subject=bad)
 
 
-async def test_config_is_validated_at_start_and_stored_flat(rt):
+async def test_input_is_validated_at_start(rt):
     # run()'s annotation is the wire contract: a bad input fails at start(), a
-    # good one lands on Run.input as the model's plain JSON — no envelope.
+    # good one reaches the body through DBOS's own checkpointed arguments.
     from druks.durable import WorkflowError
     from pydantic import ValidationError
 
@@ -567,8 +575,8 @@ async def test_config_is_validated_at_start_and_stored_flat(rt):
         await rt.SubjectFlow.start(subject=None, repo="x")  # takes no input
 
     wfid = await rt.RecordFeedback.start(subject=None, repo="owner/flat")
-    row = await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FINISHED)
-    assert row.input == {"repo": "owner/flat"}
+    await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FINISHED)
+    assert "owner/flat" in SINK
 
 
 async def test_run_signature_is_enforced(rt):

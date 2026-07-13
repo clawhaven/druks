@@ -25,12 +25,15 @@ def _scope_run(db_session, *, work_item_id, parked=True):
         id=str(uuid7()),
         kind="build.scope",
         input_gate=ScopeReply.topic if parked else None,
-        input={"remote_key": "ACME-1"},
-        subject={"type": "work_item", "id": work_item_id},
     )
     db_session.add(run)
     db_session.flush()
-    seed_dbos_status(db_session, run.id, "pending_input" if parked else "finished")
+    seed_dbos_status(
+        db_session,
+        run.id,
+        "pending_input" if parked else "finished",
+        subject={"type": "work_item", "id": work_item_id},
+    )
     return run
 
 

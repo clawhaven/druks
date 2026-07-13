@@ -87,19 +87,22 @@ async def test_build_lifecycle_reaches_the_tracker(db_session, monkeypatch):
     assert pushed == [SemanticStatus.IN_PROGRESS, SemanticStatus.IN_REVIEW]
 
 
-def _parked_scope_run(session, *, work_item_id, remote_key):
+def _parked_scope_run(session, *, work_item_id):
     run = Run(
         id=str(uuid7()),
         kind=Scope.kind,
         input_gate=ScopeReply.topic,
         input_request={"presentation": "external", "label": "Answer scope questions"},
-        input={"remote_key": remote_key},
-        subject={"type": "work_item", "id": work_item_id},
-        extension="build",
     )
     session.add(run)
     session.flush()
-    seed_dbos_status(session, run.id, "pending_input")
+    seed_dbos_status(
+        session,
+        run.id,
+        "pending_input",
+        subject={"type": "work_item", "id": work_item_id},
+        extension="build",
+    )
     return run
 
 
@@ -130,7 +133,7 @@ async def test_ticket_close_cancels_the_parked_scope(db_session, monkeypatch):
 
     monkeypatch.setattr("dbos.DBOS.cancel_workflow_async", _dbos_cancel)
     item = make_test_work_item(repo="acme/widget", title="t", source="linear", remote_key="ACME-5")
-    run = _parked_scope_run(db_session, work_item_id=item.id, remote_key="ACME-5")
+    run = _parked_scope_run(db_session, work_item_id=item.id)
 
     await publish(
         "ticket.transitioned",
