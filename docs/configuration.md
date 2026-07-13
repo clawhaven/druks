@@ -183,6 +183,22 @@ to deliver the notification does not unpark or fail the run.
 startup. The packaged catalog declares Linear OAuth but leaves it disabled; a
 deployment may replace the catalog. Catalogs contain definitions, not tokens.
 
+`DRUKS_MCP_TRUSTED` points at the trust-pins JSON behind the registry
+resolver's official badge. The badge is computed: an entry is official when
+its publisher namespace, reversed into a domain, matches the remote endpoint's
+host (`com.grafana` publishing on `*.grafana.com` self-certifies). Pins cover
+the two gaps the rule cannot derive, one `name: value` line each, told apart
+by the value's shape:
+
+- a publisher namespace (`"grafana": "io.github.grafana"`) vouches for a
+  publisher the rule cannot match; the entry's url stays live from the
+  registry.
+- an `http…` url (`"sentry": "https://mcp.sentry.dev/mcp"`) supplies the
+  hosted endpoint the registry entry omits entirely.
+
+To decide which to write: if the registry entry already declares the hosted
+url, pin the publisher; if it lacks one, pin the url.
+
 The dashboard can enable catalog entries and add custom servers. Authentication
 is one of:
 
