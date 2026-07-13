@@ -124,7 +124,6 @@ async def test_scope_parks_then_resumes_to_ready(rt, monkeypatch):
 
     wfid = await rt.flow.start(
         subject=WorkItem.subject_for(item_id),
-        extension="build",
         source="linear",
         remote_key="ACME-1",
     )

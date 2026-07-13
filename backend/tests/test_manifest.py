@@ -202,7 +202,7 @@ def test_persist_writes_manifest_into_the_call_dir(tmp_path, db_session):
 
 def test_manifest_surfaces_in_agent_call_files(tmp_path, db_session):
     """A written manifest.json is inventoried on the call's transcript files, in
-    the manifest slot with a download URL."""
+    the manifest slot under its downloadable file name."""
     call = seed_agent_run(agent="implement")
     manifest = _build()
     with mock.patch("druks.durable.models.load_settings", return_value=make_settings(tmp_path)):
@@ -211,4 +211,4 @@ def test_manifest_surfaces_in_agent_call_files(tmp_path, db_session):
 
     assert files.manifest
     assert files.manifest.name == "manifest.json"
-    assert files.manifest.url.endswith("/manifest.json")
+    assert files.manifest.size_bytes > 0

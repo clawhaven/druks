@@ -26,7 +26,7 @@ def _stub_profile_start(monkeypatch):
 
     calls: list[dict] = []
 
-    async def _start(cls, *, subject, extension=None, **input):
+    async def _start(cls, *, subject, **input):
         calls.append({"subject": subject, **input})
         return "fake-run-id"
 

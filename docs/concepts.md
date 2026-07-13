@@ -91,9 +91,13 @@ extension still owns domain policy and side-effect idempotency.
 
 ### State has one lifecycle owner
 
-The `durable_runs` row stores Druks metadata such as input, subject, current
-gate, failure, and timestamps. Its lifecycle state is read-only and derived
-from DBOS's workflow status:
+The `durable_runs` row stores the Druks-owned facts DBOS has no slot for: the
+current gate ask, the failure text, and timestamps. The run's subject lives on
+the DBOS workflow itself as custom attributes, so "runs for this subject" is
+answered by `workflow_status` alone. The run's extension is not stored at all —
+it is workflow-class metadata, derivable from the run's `kind` through the
+extension registry. The row's lifecycle state is read-only and derived from
+DBOS's workflow status:
 
 ```text
 scheduled -> running -> finished

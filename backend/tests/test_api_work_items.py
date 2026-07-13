@@ -29,12 +29,15 @@ def _seed_scope_run(db_session, item, *, state="finished", status=None):
         kind="build.scope",
         input_gate=ScopeReply.topic if parked else None,
         input_request=parked.model_dump(mode="json") if parked else None,
-        input={"remote_key": item.remote_key},
-        subject={"type": "work_item", "id": item.id},
     )
     db_session.add(run)
     db_session.flush()
-    seed_dbos_status(db_session, run.id, "pending_input" if parked else state)
+    seed_dbos_status(
+        db_session,
+        run.id,
+        "pending_input" if parked else state,
+        subject={"type": "work_item", "id": item.id},
+    )
     seed_call(db_session, run, "scope", status="failed" if state == "failed" else "succeeded")
     if status is not None:
         from druks.events.models import Event

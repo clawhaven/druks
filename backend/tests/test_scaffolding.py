@@ -45,6 +45,10 @@ def test_create_extension_scaffolds_a_loadable_package(tmp_path):
         for role in ("models", "schemas", "contracts", "workflows", "routes", "subscribers"):
             importlib.import_module(f"druks_night_watch.{role}")
 
+        # The workflow guidance must not teach a per-run extension= argument —
+        # a workflow's identity comes from its declaring extension.
+        assert "extension=" not in (target / "druks_night_watch" / "workflows.py").read_text()
+
         app = FastAPI()
         extension.load(app)
         client = TestClient(app)

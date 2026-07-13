@@ -175,15 +175,10 @@ class TestProfileStatus:
         from druks.durable import Run
         from uuid_utils import uuid7
 
-        run = Run(
-            id=str(uuid7()),
-            kind="build.profile",
-            failure=failure,
-            subject={"type": "project_repo", "id": repo.id},
-        )
+        run = Run(id=str(uuid7()), kind="build.profile", failure=failure)
         db_session.add(run)
         db_session.flush()
-        seed_dbos_status(db_session, run.id, state)
+        seed_dbos_status(db_session, run.id, state, subject={"type": "project_repo", "id": repo.id})
         return run
 
     def test_unprofiled_when_no_run_and_no_profile(self, db_session):

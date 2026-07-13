@@ -12,6 +12,43 @@ if TYPE_CHECKING:
 
 _GROUP = "druks.extensions"
 
+# Which extension owns each workflow-declaring package — the loader-validated
+# installation claims, stamped once an entry point checks out, so a Workflow
+# class resolves its identity at definition time. None marks a package whose
+# workflows belong to no extension (how test modules register themselves).
+_workflow_packages: dict[str, str | None] = {}
+
+
+def register_workflow_package(package: str, extension: str | None) -> None:
+    # Conflicting or overlapping claims are a packaging mistake — two installs
+    # can't share a workflow package.
+    if package in _workflow_packages:
+        if _workflow_packages[package] != extension:
+            raise MalformedExtension(
+                f"package {package!r} already belongs to "
+                f"{_workflow_packages[package]!r} — {extension!r} can't claim it"
+            )
+        return
+    for registered, owner in _workflow_packages.items():
+        nested = registered.startswith(f"{package}.") or package.startswith(f"{registered}.")
+        if nested and owner != extension:
+            raise MalformedExtension(
+                f"package {package!r} overlaps {registered!r} (owned by {owner!r}) — "
+                "workflow ownership must be unambiguous"
+            )
+    _workflow_packages[package] = extension
+
+
+def resolve_workflow_extension(module: str) -> str | None:
+    """The extension owning ``module``'s nearest registered ancestor package.
+    Raises ``LookupError`` when no registered package contains the module."""
+    prefix = module
+    while prefix:
+        if prefix in _workflow_packages:
+            return _workflow_packages[prefix]
+        prefix = prefix.rpartition(".")[0]
+    raise LookupError(module)
+
 
 def iter_extensions() -> list[type[Extension]]:
     """Every installed extension, resolved from the ``druks.extensions`` entry points.
@@ -25,9 +62,17 @@ def iter_extensions() -> list[type[Extension]]:
         extension = entry.load()
         if not (isinstance(extension, type) and issubclass(extension, Extension)):
             raise TypeError(f"extension entry point {entry.name!r} is not an Extension")
+        if extension.name != entry.name:
+            raise MalformedExtension(
+                f"extension {entry.name!r} entry point resolves to an Extension named "
+                f"{extension.name!r} — the entry-point name must match Extension.name"
+            )
         if extension.name in seen:
             raise ValueError(f"duplicate extension name {extension.name!r}")
         seen.add(extension.name)
+        # Ownership registers before load(app)/discover() imports the capability
+        # modules, whose Workflow classes resolve their extension at definition.
+        register_workflow_package(extension.package, extension.name)
         extensions.append(extension)
     return extensions
 
@@ -79,18 +124,16 @@ def _resolve(name: str) -> type[Extension]:
             f"({', '.join(e.value for e in matches)}) — uninstall all but one"
         )
     extension = _load_entry(matches[0])
-    # The entry-point key must equal the class's ``name``. That key is what scopes
-    # the /api, settings, and migration namespaces here, so this is the invariant
-    # that lets the duplicate-key check above stand in for a duplicate-name check —
-    # without importing sibling extensions and defeating the point of an app-less,
-    # single-extension load. A same-name collision hidden behind a mismatched key is
-    # that sibling's own malformed state, caught when it is loaded (or at full boot,
-    # where iter_extensions() imports everything).
+    # The entry-point key must equal the class's ``name`` — the key scopes the
+    # /api, settings, and migration namespaces, which is what lets the
+    # duplicate-key check above stand in for a duplicate-name check without
+    # importing sibling extensions.
     if extension.name != name:
         raise MalformedExtension(
             f"extension {name!r} entry point resolves to an Extension named "
             f"{extension.name!r} — the entry-point name must match Extension.name"
         )
+    register_workflow_package(extension.package, extension.name)
     return extension
 
 

@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import quote
 
 from pydantic import Field, SerializeAsAny
 
@@ -73,27 +72,21 @@ class ArtifactFile(BaseResponse):
     name: str
     size_bytes: int
     updated_at: datetime
-    url: str
 
 
 class ArtifactDescriptor(BaseResponse):
     # A call's renderable output (a plan's markdown), rendered by kind — distinct
-    # from the raw files. Content lives in the call dir, served by the same route.
+    # from the raw files. ``name`` is its file in the call dir, downloadable from
+    # the transcript files route like any other.
     kind: str
     title: str
-    url: str
-
-    @classmethod
-    def from_artifact(cls, artifact: Artifact, *, base: str) -> "ArtifactDescriptor":
-        return cls(
-            kind=artifact.kind, title=artifact.title, url=base + quote(artifact.path, safe="")
-        )
+    name: str
 
 
 class AgentCallFiles(BaseResponse):
-    # A call's on-disk artifacts, each with a download URL back to the transcript router.
-    # The slot the file occupies is its role (prompt / response / stdout / stderr /
-    # metadata / manifest).
+    # A call's on-disk artifacts by role (prompt / response / stdout / stderr /
+    # metadata / manifest). Each carries its file name; the client composes the
+    # download URL from the transcript route it fetched this listing from.
     prompt: ArtifactFile | None = None
     stdout: ArtifactFile | None = None
     stderr: ArtifactFile | None = None
@@ -108,7 +101,6 @@ class AgentCallFiles(BaseResponse):
     @classmethod
     def from_call(cls, call: AgentCall, artifact: Artifact | None) -> "AgentCallFiles":
         layout = call.artifact_layout
-        base = f"/api/{call.run.extension}/transcripts/{call.id}/files/"
 
         def named(path: Path) -> ArtifactFile | None:
             if not path.is_file():
@@ -118,10 +110,13 @@ class AgentCallFiles(BaseResponse):
                 name=path.name,
                 size_bytes=stat.st_size,
                 updated_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
-                url=base + quote(path.name, safe=""),
             )
 
-        descriptor = ArtifactDescriptor.from_artifact(artifact, base=base) if artifact else None
+        descriptor = None
+        if artifact:
+            descriptor = ArtifactDescriptor(
+                kind=artifact.kind, title=artifact.title, name=artifact.path
+            )
         return cls(
             prompt=named(layout.prompt),
             response=named(layout.output),

@@ -132,11 +132,11 @@ export interface ArtifactFile {
   name: string
   sizeBytes: number
   updatedAt: string
-  url: string
 }
 
-// A call's on-disk artifacts, each with a download URL — served by the platform's
-// per-extension transcript router (/api/<ext>/transcripts/<callId>/files).
+// A call's on-disk artifacts by role. Each carries its file name; the client
+// composes the download URL from the transcript route it fetched this listing
+// from (subjectApi.transcriptFile).
 export interface AgentCallFiles {
   prompt?: ArtifactFile | null
   stdout?: ArtifactFile | null

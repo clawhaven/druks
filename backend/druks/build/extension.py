@@ -1,7 +1,6 @@
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 
 from druks.agents import Agent
 from druks.build.contracts import (
@@ -17,10 +16,9 @@ from druks.build.contracts import (
 from druks.build.models import WorkItem
 from druks.build.scoping.contracts import ScopeBriefOutput
 from druks.db import db_session
-from druks.durable.enums import RunState
 from druks.events import Event, FeedItem
 from druks.extensions import Extension
-from druks.workflows import Run, SubjectActivity, get_run_phase
+from druks.workflows import Run, RunState, SubjectActivity, get_run_phase
 
 if TYPE_CHECKING:
     from druks.build.schemas import WorkItemSummary
@@ -219,13 +217,8 @@ class Build(Extension):
         assert item is not None  # the read-side resolves the summary before the activity
         run = item.get_build_run()
         if not run:
-            newest_scope = (
-                select(Run)
-                .where(Run.kind == Scope.kind, Run.subject["id"].as_integer() == item.id)
-                .order_by(Run.created_at.desc())
-                .limit(1)
-            )
-            run = db_session().scalars(newest_scope).first()
+            scope_runs = Run.list_for_subject("work_item", str(item.id), kind=Scope.kind)
+            run = scope_runs[0] if scope_runs else None
         # Only while a run is actually RUNNING — a run parked on a gate isn't working.
         if not run or run.state != RunState.RUNNING.value:
             return None

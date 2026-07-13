@@ -114,6 +114,8 @@ export const subjectApi = {
     `/api/${extension}/transcripts/${callId}`,
   transcriptFiles: (extension: string, callId: string) =>
     getJSON<AgentCallFiles>(`/api/${extension}/transcripts/${callId}/files`),
+  transcriptFile: (extension: string, callId: string, name: string) =>
+    `/api/${extension}/transcripts/${callId}/files/${encodeURIComponent(name)}`,
 }
 
 export const api = {

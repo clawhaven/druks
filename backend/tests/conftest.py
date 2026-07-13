@@ -13,6 +13,7 @@ from druks.database import (
     create_engine_from_url,
     init_db,
 )
+from druks.extensions.loader import iter_extensions, register_workflow_package
 from druks.settings import Settings
 from sqlalchemy.orm import Session
 
@@ -32,6 +33,14 @@ os.environ.setdefault("DRUKS_SECRETS_KEY", base64.b64encode(secrets.token_bytes(
 # No Redis in the suite — the sandbox gate no-ops (real VMs/rotation are
 # integration concerns), so its waits don't reach for a client that isn't there.
 _gate._redis = lambda: None
+
+# A Workflow class resolves its declaring extension at definition time, from
+# packages the loader registers before importing. Tests import workflow modules
+# directly and some declare their own workflows, so both register here — before
+# collection imports any test module.
+iter_extensions()
+for test_module in ("test_durable_sdk", "test_notifications_durable"):
+    register_workflow_package(test_module, None)
 
 
 class FakeRedis:
@@ -344,9 +353,10 @@ def bind_ambient_session(session) -> None:
     db_session.registry.set(session)
 
 
-def seed_dbos_status(session, workflow_id: str, state: str) -> None:
-    """Write the ``dbos.workflow_status`` row a Run's derived ``state`` reads —
-    the paired half of every persisted run seed (there is no state column)."""
+def seed_dbos_status(session, workflow_id: str, state: str, *, subject=None) -> None:
+    """Write the ``dbos.workflow_status`` row a Run's derived ``state`` reads,
+    carrying the subject attributes ``start()`` stamps — the paired half of
+    every persisted run seed (there is no state column)."""
     from druks.durable.dbos_state import workflow_status
     from druks.models import Base
 
@@ -359,13 +369,17 @@ def seed_dbos_status(session, workflow_id: str, state: str) -> None:
         "cancelled": "CANCELLED",
     }[state]
     now_ms = int(Base.utc_now().timestamp() * 1000)
+    attributes = None
+    if subject:
+        attributes = {"subject_type": subject["type"], "subject_id": str(subject["id"])}
     # created_at / priority carry server defaults in the dbos schema; the
-    # derivation reads only status + updated_at, so seed just those.
+    # derivation and subject keying read only these.
     session.execute(
         workflow_status.insert().values(
             workflow_uuid=workflow_id,
             status=status,
             updated_at=now_ms,
+            attributes=attributes,
         )
     )
     session.flush()
@@ -379,7 +393,6 @@ def seed_build_run(
     input_gate: str | None = None,
     input_request: dict | None = None,
     failure: str | None = None,
-    config_extra: dict | None = None,
 ):
     """Seed a build Run row for a work item and bind it via
     ``item.build_run_id``. Returns the Run. Attach agent calls with
@@ -397,13 +410,10 @@ def seed_build_run(
         input_gate=input_gate,
         input_request=input_request,
         failure=failure,
-        input=config_extra or {},
-        subject={"type": "work_item", "id": work_item_id},
-        extension="build",
     )
     session.add(run)
     session.flush()
-    seed_dbos_status(session, run.id, state)
+    seed_dbos_status(session, run.id, state, subject={"type": "work_item", "id": work_item_id})
     item = WorkItem.get(work_item_id)
     item.build_run_id = run.id
     session.flush()
@@ -472,11 +482,11 @@ def seed_agent_run(
     return call
 
 
-def seed_run(session, run_id, *, kind="build.build_workflow", input=None):
+def seed_run(session, run_id, *, kind="build.build_workflow"):
     # A bare durable_runs row so an AgentCall / Artifact FK to it resolves.
     from druks.durable import Run
 
-    run = Run(id=run_id, kind=kind, input=input or {})
+    run = Run(id=run_id, kind=kind)
     session.add(run)
     session.flush()
     return run

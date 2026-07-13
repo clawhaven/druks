@@ -126,7 +126,6 @@ Start a workflow with an explicit subject:
 ```python
 run_id = await Sweep.start(
     subject={"type": "repository", "id": repo_id},
-    extension=NightWatch.name,
     repo=full_name,
 )
 ```

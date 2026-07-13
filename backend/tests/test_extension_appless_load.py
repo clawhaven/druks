@@ -99,6 +99,7 @@ def external_extension(tmp_path_factory):
     entry point, and restore every global its load mutates (registries, table
     metadata, signal receivers) so the suite stays clean."""
     from blinker import signal
+    from druks.extensions import loader as extensions_loader
     from druks.extensions.registry import agents, webhooks, workflows
     from druks.models import Base
 
@@ -108,6 +109,7 @@ def external_extension(tmp_path_factory):
 
     tables = set(Base.metadata.tables)
     registries = {r: dict(r._items) for r in (agents, webhooks, workflows)}
+    packages = dict(extensions_loader._workflow_packages)
     finished = signal("run.finished")
     receivers = dict(finished.receivers)
     try:
@@ -118,6 +120,8 @@ def external_extension(tmp_path_factory):
             Base.metadata.remove(Base.metadata.tables[name])
         for registry, snapshot in registries.items():
             registry._items = snapshot
+        extensions_loader._workflow_packages.clear()
+        extensions_loader._workflow_packages.update(packages)
         finished.receivers = receivers
         for name in [m for m in sys.modules if m == _PACKAGE or m.startswith(f"{_PACKAGE}.")]:
             del sys.modules[name]
@@ -250,6 +254,18 @@ def test_entry_point_key_mismatch_raises_malformed_extension(installed, monkeypa
 
     with pytest.raises(MalformedExtension, match="must match Extension.name"):
         load_extension("not_probe")
+
+
+def test_boot_rejects_an_entry_point_key_mismatch(installed, monkeypatch):
+    """Full boot applies the same key/name validation as the single load — an
+    aliased entry the app-less path rejects must not slip through iter_extensions()."""
+    aliased = EntryPoint(
+        name="not_probe", value=f"{_PACKAGE}.extension:Probe", group="druks.extensions"
+    )
+    monkeypatch.setattr(loader, "entry_points", lambda *, group: [aliased])
+
+    with pytest.raises(MalformedExtension, match="must match Extension.name"):
+        loader.iter_extensions()
 
 
 def test_import_error_in_entry_module_raises_extension_import_error(tmp_path, monkeypatch):

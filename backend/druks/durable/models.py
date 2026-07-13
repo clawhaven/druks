@@ -11,7 +11,7 @@ from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
 from druks.core.models import Uuid7Pk
 from druks.database import db_session, get_session
-from druks.durable.dbos_state import state_expression, updated_at_expression
+from druks.durable.dbos_state import state_expression, subject_filter, updated_at_expression
 from druks.durable.enums import ACTIVE_STATES
 from druks.harnesses.artifacts import normalize_token_usage
 from druks.models import Base
@@ -44,13 +44,6 @@ class Run(Base):
     # error, so read-sides tell e.g. a gate timeout from a crash without parsing
     # `failure`. Empty/None for a crash.
     failure_code: Mapped[str | None] = mapped_column(default=None)
-    # run()'s validated input, dumped to JSON at start(); {} for an input-less run.
-    input: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-    # What the run is about ({type, id}); None for a framework cron. Routing
-    # metadata, not body input — its own column so events and reads key off it.
-    subject: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
-    # The extension that launched the run, stamped onto its events.
-    extension: Mapped[str | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     # Derived, never stored: DBOS owns whether the workflow is live — every
     # SELECT (session.get() on a not-yet-loaded instance included) computes it
@@ -68,27 +61,14 @@ class Run(Base):
         return self.state in {s.value for s in ACTIVE_STATES}
 
     @classmethod
-    def create_row(
-        cls,
-        engine,
-        *,
-        workflow_id: str,
-        kind: str,
-        input: dict[str, Any],
-        subject: dict[str, Any] | None = None,
-        extension: str | None = None,
-    ) -> None:
+    def create_row(cls, engine, *, workflow_id: str, kind: str) -> None:
         # Own committed transaction (not the caller's request txn) so the row
         # exists before the running workflow's first lifecycle event. Idempotent:
         # a scheduled run creates its row inside the (replayable) body, and a
         # start that races its own retry must not double-insert.
         with get_session(engine) as session:
             session.execute(
-                pg_insert(cls)
-                .values(
-                    id=workflow_id, kind=kind, input=input, subject=subject, extension=extension
-                )
-                .on_conflict_do_nothing()
+                pg_insert(cls).values(id=workflow_id, kind=kind).on_conflict_do_nothing()
             )
             session.commit()
 
@@ -97,17 +77,21 @@ class Run(Base):
         return db_session().get(cls, workflow_id)
 
     @classmethod
-    def list_for_subject(cls, subject_type: str, subject_id: str) -> list["Run"]:
+    def list_for_subject(
+        cls, subject_type: str, subject_id: str, kind: str | None = None
+    ) -> list["Run"]:
         # Every run about this subject (stamped at start), newest first — a
-        # subject's lifecycle spans many runs, so its status is theirs aggregated.
+        # subject's lifecycle spans many runs, so its status is theirs
+        # aggregated. ``kind`` narrows to one workflow's runs; per (kind,
+        # subject) the queue dedup makes runs strictly sequential, so newest
+        # first holds within a kind too.
         stmt = (
             select(cls)
-            .where(
-                cls.subject["type"].as_string() == subject_type,
-                cls.subject["id"].as_string() == subject_id,
-            )
+            .where(subject_filter(cls.id, subject_type, subject_id))
             .order_by(cls.updated_at.desc())
         )
+        if kind:
+            stmt = stmt.where(cls.kind == kind)
         return list(db_session().scalars(stmt))
 
     def get_ask(self) -> dict[str, Any]:
@@ -150,16 +134,17 @@ class Run(Base):
         # actions; url is an optional gate-author-declared view-link.
         return {"body": ask["label"], "actions": None, "deep_link": ask.get("url")}
 
-    def create_park_notification(self, destination_id: str) -> str:
+    def create_park_notification(self, destination_id: str, subject: dict[str, Any]) -> str:
         # Create the notification for the round this run just parked on — the
-        # caller enqueues delivery. run_id + run_parked_at snapshot the round
-        # so a click on an old button can be refused once the run re-parks.
+        # caller supplies the run's subject and enqueues delivery. run_id +
+        # run_parked_at snapshot the round so a click on an old button can be
+        # refused once the run re-parks.
         rendered = self.get_rendered_ask()
         notification = Notification.create(
             destination_id=destination_id,
             reason="gate.parked",
             body=rendered["body"],
-            subject=self.subject,
+            subject=subject,
             actions=rendered["actions"],
             run_id=self.id,
             run_parked_at=self.input_requested_at,
@@ -362,11 +347,7 @@ class AgentCall(Base, Uuid7Pk):
     def list_for_subject(cls, subject_type: str, subject_id: str) -> list["AgentCall"]:
         stmt = (
             select(cls)
-            .join(Run, cls.run_id == Run.id)
-            .where(
-                Run.subject["type"].as_string() == subject_type,
-                Run.subject["id"].as_string() == subject_id,
-            )
+            .where(subject_filter(cls.run_id, subject_type, subject_id))
             .order_by(cls.created_at, cls.id)
         )
         return list(db_session().scalars(stmt))

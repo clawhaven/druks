@@ -40,7 +40,7 @@ def test_duplicate_extension_name_is_rejected(monkeypatch):
     monkeypatch.setattr(
         loader,
         "entry_points",
-        lambda *, group: [_fake_entry("a", DupA), _fake_entry("b", DupB)],
+        lambda *, group: [_fake_entry("dup", DupA), _fake_entry("dup", DupB)],
     )
     with pytest.raises(ValueError, match="duplicate extension name"):
         iter_extensions()

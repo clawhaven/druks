@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, ClassVar, Self, get_type_hints
 
 from croniter import croniter
-from dbos import DBOS, SetEnqueueOptions, SetWorkflowID, StepOptions
+from dbos import DBOS, SetEnqueueOptions, SetWorkflowAttributes, SetWorkflowID, StepOptions
 from dbos._dbos import _get_dbos_instance
 from dbos._error import (
     DBOSAwaitedWorkflowCancelledError,
@@ -26,6 +26,7 @@ from druks.durable.exceptions import FatalError, GateTimeout, SubjectlessGate, W
 from druks.durable.models import AgentCall, Run
 from druks.durable.schemas import AgentCallResponse, SubjectActivity, SubjectSummary
 from druks.events.models import Event
+from druks.extensions.loader import resolve_workflow_extension
 from druks.extensions.registry import workflows
 from druks.extensions.settings import (
     coerce_setting_value,
@@ -157,12 +158,6 @@ def _kind_from_class_name(name: str) -> str:
     return _CAMEL_BOUNDARY.sub("_", name).lower()
 
 
-def _namespace_from_module(module: str) -> str | None:
-    # druks.<extension>.… → <extension>; None for out-of-tree (test) modules.
-    parts = module.split(".")
-    return parts[1] if len(parts) > 1 and parts[0] == "druks" else None
-
-
 class Gate(BaseModel):
     """A typed human-in-the-loop gate. Subclass per park point; the class name is
     the durable recv topic, the fields are the reply's schema. `wait()` parks the
@@ -222,6 +217,7 @@ async def _park(
     await _emit_run_event(
         workflow.workflow_id,
         RunState.PENDING_INPUT,
+        subject=workflow.subject,
         facts={
             "input_gate": topic,
             "input_request": input_request,
@@ -230,15 +226,20 @@ async def _park(
     )
     if workflow.subject:
         # Every subjected park notifies the designated destination — no author opt-in.
-        await _notify_designated_destination(workflow.workflow_id)
+        await _notify_designated_destination(workflow.workflow_id, workflow.subject)
     payload = await DBOS.recv_async(topic, timeout_seconds=ttl_seconds)
     if payload is None:
         raise GateTimeout(topic)
-    await _emit_run_event(workflow.workflow_id, RunState.RUNNING, facts=_GATE_CLEARED)
+    await _emit_run_event(
+        workflow.workflow_id,
+        RunState.RUNNING,
+        subject=workflow.subject,
+        facts=_GATE_CLEARED,
+    )
     return payload
 
 
-async def _notify_designated_destination(workflow_id: str) -> None:
+async def _notify_designated_destination(workflow_id: str, subject: dict[str, Any]) -> None:
     # Reads the ask off the run row the pending_input step just wrote (the
     # signal payload carries no ask — producer-side placement is the point);
     # the settings pointer is the operator's off-switch.
@@ -247,7 +248,7 @@ async def _notify_designated_destination(workflow_id: str) -> None:
             destination_id = UserSettings.get().gate_park_destination_id
             if not destination_id:
                 return None
-            return Run.get(workflow_id).create_park_notification(destination_id)
+            return Run.get(workflow_id).create_park_notification(destination_id, subject)
 
     notification_id = await DBOS.run_step_async(
         StepOptions(name="notifications.gate_park", **_IO_RETRIES), _create
@@ -283,6 +284,7 @@ async def _emit_run_event(
     workflow_id: str,
     event: RunState,
     *,
+    subject: dict[str, Any] | None,
     facts: dict[str, Any] | None = None,
     result: Any = None,
 ) -> None:
@@ -290,7 +292,8 @@ async def _emit_run_event(
     # memoized step; the signal publishes in a second, so a raising subscriber
     # can't roll back the record. Publish is at-least-once and can land before
     # DBOS commits the terminal status — subscribers stay idempotent and read
-    # the payload, never derived Run.state.
+    # the payload, never derived Run.state. subject comes from the workflow's
+    # own arguments, so a replay stamps the same routing every time.
     async def _transition() -> dict[str, Any] | None:
         async with step_session() as session:
             run = Run.get(workflow_id)
@@ -298,13 +301,13 @@ async def _emit_run_event(
                 for field, value in facts.items():
                     setattr(run, field, value)
                 session.flush()
-            if not run.subject:
+            if not subject:
                 # Subjectless framework crons are plumbing: no feed entry.
                 return None
             return {
                 "kind": run.kind,
-                "subject": run.subject,
-                "payload": _log_run_event(run, event, result),
+                "subject": subject,
+                "payload": _log_run_event(run, event, subject, result),
             }
 
     transition = await DBOS.run_step_async(
@@ -327,7 +330,12 @@ async def _emit_run_event(
     )
 
 
-def _log_run_event(run: Run, event: RunState, result: Any = None) -> dict[str, Any]:
+def _log_run_event(
+    run: Run,
+    event: RunState,
+    subject: dict[str, Any],
+    result: Any = None,
+) -> dict[str, Any]:
     # One event per transition — the feed's run-level granularity, read off the
     # just-written row so gate and failure ride the transition that set them.
     # The result rides the finished event so reactions read the outcome off the
@@ -343,9 +351,9 @@ def _log_run_event(run: Run, event: RunState, result: Any = None) -> dict[str, A
         payload["result"] = result
     Event.emit(
         type=f"run.{event.value}",
-        subject=run.subject,
+        subject=subject,
         payload=payload,
-        extension=run.extension,
+        extension=workflows.get(run.kind).extension,
     )
     return payload
 
@@ -358,9 +366,7 @@ _GATE_CLEARED: dict[str, Any] = {"input_gate": None, "input_request": None}
 async def _execute_run(
     workflow_id: str,
     kind: str,
-    input: dict[str, Any],
     subject: dict[str, Any] | None,
-    extension: str | None,
     body: Callable,
 ) -> Any:
     # Ensure the row (idempotent, so a scheduled run with no start() makes it
@@ -368,15 +374,8 @@ async def _execute_run(
     # Every failure re-raises so DBOS records the terminal ERROR derived state
     # reads; an operator cancel already carries its own reason and terminal
     # status, so it passes through untouched.
-    Run.create_row(
-        _step_engine(),
-        workflow_id=workflow_id,
-        kind=kind,
-        input=input,
-        subject=subject,
-        extension=extension,
-    )
-    await _emit_run_event(workflow_id, RunState.RUNNING)
+    Run.create_row(_step_engine(), workflow_id=workflow_id, kind=kind)
+    await _emit_run_event(workflow_id, RunState.RUNNING, subject=subject)
     try:
         result = await body()
     except (DBOSAwaitedWorkflowCancelledError, DBOSWorkflowCancelledError):
@@ -385,6 +384,7 @@ async def _execute_run(
         await _emit_run_event(
             workflow_id,
             RunState.FAILED,
+            subject=subject,
             facts={
                 **_GATE_CLEARED,
                 "failure": str(exc),
@@ -392,12 +392,16 @@ async def _execute_run(
             },
         )
         raise
-    await _emit_run_event(workflow_id, RunState.FINISHED, result=result)
+    await _emit_run_event(workflow_id, RunState.FINISHED, subject=subject, result=result)
     return result
 
 
 class Workflow:
     kind: ClassVar[str] = ""
+    # The extension that declares this workflow — class identity, resolved from
+    # the loader's package registrations at definition time and namespacing
+    # ``kind``. Never supplied or stored per run.
+    extension: ClassVar[str | None] = None
     # When set to a cron string, the workflow also registers a schedule that
     # fires its run() on that cadence (no subject — a framework cron).
     every: ClassVar[str | None] = None
@@ -425,10 +429,22 @@ class Workflow:
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        if not cls.__dict__.get("kind"):
-            namespace = _namespace_from_module(cls.__module__)
-            local_kind = _kind_from_class_name(cls.__name__)
-            cls.kind = f"{namespace}.{local_kind}" if namespace else local_kind
+        try:
+            cls.extension = resolve_workflow_extension(cls.__module__)
+        except LookupError:
+            raise WorkflowError(
+                f"{cls.__module__} declares workflow {cls.__name__} outside every "
+                "registered extension package — workflow modules load through "
+                "druks.extensions.loader; a module the loader doesn't own must "
+                "register_workflow_package() before importing"
+            ) from None
+        local_kind = cls.__dict__.get("kind") or _kind_from_class_name(cls.__name__)
+        if "." in local_kind:
+            raise WorkflowError(
+                f"{cls.__name__}.kind {local_kind!r} must be a local name — "
+                "the declaring extension supplies the namespace"
+            )
+        cls.kind = f"{cls.extension}.{local_kind}" if cls.extension else local_kind
         validate_settings_declaration(cls.Settings)
         cls._body_method = _resolve_body_method(cls)
         # Before _wrap_steps: run()'s wrapper signature is (*args, **kwargs).
@@ -439,8 +455,9 @@ class Workflow:
 
     def __init__(self) -> None:
         self._workflow_id: str = ""
-        # What the run is about ({"type", "id"}), set from config before run();
-        # None for a subjectless framework run. Dispatch-only — read, don't write.
+        # What the run is about ({"type", "id"}), set from the dispatch arguments
+        # before run(); None for a subjectless framework run. Dispatch-only —
+        # read, don't write.
         self.subject: dict[str, Any] | None = None
         # run()'s validated input bundle (the model synthesized from its signature),
         # set before run() — for templates and derived properties. None = no input.
@@ -586,13 +603,7 @@ class Workflow:
         SettingsOverride.set_workflow_setting(cls.kind, field, value)
 
     @classmethod
-    async def start(
-        cls,
-        *,
-        subject: dict[str, Any] | None,
-        extension: str | None = None,
-        **input: Any,
-    ) -> str:
+    async def start(cls, *, subject: dict[str, Any] | None, **input: Any) -> str:
         # Mint the id, write the projection row, enqueue the body. Returns the
         # workflow id; an extension that wants one-active-run-per-subject enforces
         # that on its own side before calling this. Enqueuing (not start_workflow)
@@ -620,12 +631,22 @@ class Workflow:
         # the live run's id. Subjectless runs are unbounded.
         enqueue_options = (
             SetEnqueueOptions(deduplication_id=f"{cls.kind}:{subject['type']}:{subject['id']}")
-            if subject is not None
+            if subject
             else nullcontext()
         )
+        # The workflow's routing metadata, stamped as DBOS custom attributes so
+        # "runs for this subject" is answered by workflow_status itself. The
+        # subject id is stamped as a string — the one shape every reader compares.
+        attributes = None
+        if subject:
+            attributes = {"subject_type": subject["type"], "subject_id": str(subject["id"])}
         try:
-            with SetWorkflowID(workflow_id), enqueue_options:
-                await run_queue.enqueue_async(cls._entry, wire, subject, extension)
+            with (
+                SetWorkflowID(workflow_id),
+                SetWorkflowAttributes(attributes),
+                enqueue_options,
+            ):
+                await run_queue.enqueue_async(cls._entry, subject, wire)
         except DBOSQueueDeduplicatedError as duplicate:
             holder = _get_dbos_instance()._sys_db.get_deduplicated_workflow(
                 run_queue.name, duplicate.deduplication_id
@@ -634,17 +655,10 @@ class Workflow:
                 return holder
             # The holder reached terminal between the rejection and the lookup —
             # the slot is free now, so this start goes through.
-            return await cls.start(subject=subject, extension=extension, **input)
+            return await cls.start(subject=subject, **input)
         # The body also creates its row (idempotently) — this one just makes it
         # visible before an executor picks the workflow up.
-        Run.create_row(
-            _step_engine(),
-            workflow_id=workflow_id,
-            kind=cls.kind,
-            input=wire,
-            subject=subject,
-            extension=extension,
-        )
+        Run.create_row(_step_engine(), workflow_id=workflow_id, kind=cls.kind)
         return workflow_id
 
 
@@ -676,9 +690,8 @@ def _make_step(kind: str, name: str, method: Callable) -> Callable:
 
 async def _run_instance(
     cls: type[Workflow],
-    input: dict[str, Any] | None = None,
     subject: dict[str, Any] | None = None,
-    extension: str | None = None,
+    input: dict[str, Any] | None = None,
 ) -> Any:
     instance = cls()
     instance._workflow_id = DBOS.workflow_id  # type: ignore[assignment]
@@ -696,9 +709,7 @@ async def _run_instance(
         return await _execute_run(
             instance._workflow_id,
             cls.kind,
-            input or {},
             subject,
-            extension,
             lambda: getattr(instance, cls._body_method)(**run_kwargs),
         )
     finally:
@@ -707,13 +718,12 @@ async def _run_instance(
 
 
 def _register_entry(cls: type[Workflow]) -> None:
+    # The closure binds cls outside the durable arguments: the DBOS workflow
+    # NAME (the kind) is what says which class this is, so recovery rebinds by
+    # name and no class object ever rides a checkpoint.
     @DBOS.workflow(name=cls.kind)
-    async def _entry(
-        input: dict[str, Any],
-        subject: dict[str, Any] | None = None,
-        extension: str | None = None,
-    ) -> None:
-        await _run_instance(cls, input, subject, extension)
+    async def _entry(subject: dict[str, Any] | None, input: dict[str, Any]) -> None:
+        await _run_instance(cls, subject, input)
 
     cls._entry = staticmethod(_entry)  # type: ignore[assignment]
 

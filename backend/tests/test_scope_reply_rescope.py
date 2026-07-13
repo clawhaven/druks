@@ -25,12 +25,15 @@ def _scope_run(db_session, *, work_item_id, parked=True):
         id=str(uuid7()),
         kind="build.scope",
         input_gate=ScopeReply.topic if parked else None,
-        input={"remote_key": "ACME-1"},
-        subject={"type": "work_item", "id": work_item_id},
     )
     db_session.add(run)
     db_session.flush()
-    seed_dbos_status(db_session, run.id, "pending_input" if parked else "finished")
+    seed_dbos_status(
+        db_session,
+        run.id,
+        "pending_input" if parked else "finished",
+        subject={"type": "work_item", "id": work_item_id},
+    )
     return run
 
 
@@ -98,7 +101,6 @@ async def test_transition_scopes_an_unlabeled_ticket(db_session, _stub_enqueue):
     # Identity only crosses the wire — the agent fetches the rest itself.
     assert _stub_enqueue[0] == {
         "subject": _stub_enqueue[0]["subject"],
-        "extension": "build",
         "remote_key": "ACME-9",
         "source": "linear",
     }

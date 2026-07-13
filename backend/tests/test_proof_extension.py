@@ -49,6 +49,7 @@ def external_package():
     ``Note`` class is declared once — a re-declaration into the shared metadata
     collides."""
     from blinker import signal
+    from druks.extensions import loader as extensions_loader
     from druks.extensions.registry import agents, webhooks, workflows
     from druks.models import Base
 
@@ -56,6 +57,7 @@ def external_package():
 
     tables = set(Base.metadata.tables)
     registries = {registry: dict(registry._items) for registry in (agents, webhooks, workflows)}
+    packages = dict(extensions_loader._workflow_packages)
     finished = signal("run.finished")
     receivers = dict(finished.receivers)
     try:
@@ -66,6 +68,8 @@ def external_package():
             Base.metadata.remove(Base.metadata.tables[name])
         for registry, snapshot in registries.items():
             registry._items = snapshot
+        extensions_loader._workflow_packages.clear()
+        extensions_loader._workflow_packages.update(packages)
         finished.receivers = receivers
         for name in [m for m in sys.modules if m == _PACKAGE or m.startswith(f"{_PACKAGE}.")]:
             del sys.modules[name]
@@ -295,14 +299,18 @@ def test_feed_formats_the_extensions_event(installed):
 
 async def test_dispatch_starts_a_run_keyed_to_the_note(installed, monkeypatch):
     """The workflow's launch policy starts one run per note — the subject keys off
-    the note id, and the note id also rides the run as its typed input."""
+    the note id, and the note id also rides the run as its typed input. The
+    workflow's identity comes from its declaring extension, never the caller."""
     load_extension("field_notes")
     from druks_field_notes.workflows import Summarize
 
+    assert Summarize.extension == "field_notes"
+    assert Summarize.kind == "field_notes.summarize"
+
     started: dict[str, object] = {}
 
-    async def _capture(*, subject, extension=None, **input):
-        started.update(subject=subject, extension=extension, input=input)
+    async def _capture(*, subject, **input):
+        started.update(subject=subject, input=input)
         return "run-1"
 
     monkeypatch.setattr(Summarize, "start", _capture)
@@ -311,7 +319,6 @@ async def test_dispatch_starts_a_run_keyed_to_the_note(installed, monkeypatch):
 
     assert run_id == "run-1"
     assert started["subject"] == {"type": "note", "id": 42}
-    assert started["extension"] == "field_notes"
     assert started["input"] == {"note_id": 42}
 
 

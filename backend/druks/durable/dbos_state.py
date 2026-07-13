@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
 
 from druks.durable.enums import RunState
 
@@ -14,17 +15,37 @@ DBOS_SYSTEM_SCHEMA = "dbos"
 # its executor destroyed) and reads orphaned rather than scheduled forever.
 _MISSING_STATUS_GRACE = timedelta(minutes=5)
 
-# Read-only handle on the columns the derivation needs; DBOS owns and migrates
-# the real table. NOTE: DBOS workflow_status GC/retention must stay off while
-# durable_runs keeps history — a purged workflow row derives as orphaned once
-# past the grace window.
+# Read-only handle on the columns the derivation and subject keying need; DBOS
+# owns and migrates the real table. NOTE: DBOS workflow_status GC/retention must
+# stay off — a purged workflow row derives as orphaned once past the grace
+# window and falls out of its subject's timeline.
 workflow_status = sa.Table(
     "workflow_status",
     sa.MetaData(schema=DBOS_SYSTEM_SCHEMA),
     sa.Column("workflow_uuid", sa.String, primary_key=True),
     sa.Column("status", sa.String),
     sa.Column("updated_at", sa.BigInteger),
+    sa.Column("attributes", JSONB),
 )
+
+
+def subject_filter(
+    run_id: sa.ColumnElement, subject_type: str, subject_id: str
+) -> sa.ColumnElement:
+    # "This run is about that subject" — the predicate every runs-for-a-subject
+    # query composes, reading the attributes stamped at start(). A fresh alias
+    # per call keeps it independent of the state/updated_at subqueries, which
+    # claim the bare workflow_status table via correlate_except.
+    ws = workflow_status.alias()
+    return (
+        sa.select(ws.c.workflow_uuid)
+        .where(
+            ws.c.workflow_uuid == run_id,
+            ws.c.attributes["subject_type"].as_string() == subject_type,
+            ws.c.attributes["subject_id"].as_string() == subject_id,
+        )
+        .exists()
+    )
 
 
 def state_expression(
