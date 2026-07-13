@@ -51,13 +51,7 @@ def _seed_run(
     )
     session.add(run)
     session.flush()
-    seed_dbos_status(
-        session,
-        run.id,
-        state,
-        subject={"type": "thing", "id": subject_id},
-        extension="faketest",
-    )
+    seed_dbos_status(session, run.id, state, subject={"type": "thing", "id": subject_id})
     return run
 
 
