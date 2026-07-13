@@ -77,14 +77,21 @@ class Run(Base):
         return db_session().get(cls, workflow_id)
 
     @classmethod
-    def list_for_subject(cls, subject_type: str, subject_id: str) -> list["Run"]:
+    def list_for_subject(
+        cls, subject_type: str, subject_id: str, kind: str | None = None
+    ) -> list["Run"]:
         # Every run about this subject (stamped at start), newest first — a
-        # subject's lifecycle spans many runs, so its status is theirs aggregated.
+        # subject's lifecycle spans many runs, so its status is theirs
+        # aggregated. ``kind`` narrows to one workflow's runs; per (kind,
+        # subject) the queue dedup makes runs strictly sequential, so newest
+        # first holds within a kind too.
         stmt = (
             select(cls)
             .where(subject_filter(cls.id, subject_type, subject_id))
             .order_by(cls.updated_at.desc())
         )
+        if kind:
+            stmt = stmt.where(cls.kind == kind)
         return list(db_session().scalars(stmt))
 
     def get_ask(self) -> dict[str, Any]:
