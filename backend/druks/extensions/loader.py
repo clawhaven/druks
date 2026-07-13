@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from druks.extensions import Extension
 
 from .exceptions import ExtensionImportError, ExtensionNotFound, MalformedExtension
+from .registry import register_workflow_package
 
 if TYPE_CHECKING:
     from importlib.metadata import EntryPoint
@@ -19,15 +20,22 @@ def iter_extensions() -> list[type[Extension]]:
     import, resolves to a non-``Extension``, or collides on ``name`` raises — there
     is no per-extension fault tolerance yet (deferred until a real external extension
     exists)."""
+    entries = list(entry_points(group=_GROUP))
+    # Ownership registers before any extension module imports, so every Workflow
+    # class — including one the first entry's import pulls in — resolves its
+    # declaring extension at definition time.
+    for entry in entries:
+        register_workflow_package(entry.module.rsplit(".", 1)[0], entry.name)
     extensions: list[type[Extension]] = []
     seen: set[str] = set()
-    for entry in entry_points(group=_GROUP):
+    for entry in entries:
         extension = entry.load()
         if not (isinstance(extension, type) and issubclass(extension, Extension)):
             raise TypeError(f"extension entry point {entry.name!r} is not an Extension")
         if extension.name in seen:
             raise ValueError(f"duplicate extension name {extension.name!r}")
         seen.add(extension.name)
+        register_workflow_package(extension.package, extension.name)
         extensions.append(extension)
     return extensions
 
@@ -78,6 +86,7 @@ def _resolve(name: str) -> type[Extension]:
             f"extension {name!r} is declared by {len(matches)} installed packages "
             f"({', '.join(e.value for e in matches)}) — uninstall all but one"
         )
+    register_workflow_package(matches[0].module.rsplit(".", 1)[0], name)
     extension = _load_entry(matches[0])
     # The entry-point key must equal the class's ``name``. That key is what scopes
     # the /api, settings, and migration namespaces here, so this is the invariant
@@ -91,6 +100,7 @@ def _resolve(name: str) -> type[Extension]:
             f"extension {name!r} entry point resolves to an Extension named "
             f"{extension.name!r} — the entry-point name must match Extension.name"
         )
+    register_workflow_package(extension.package, extension.name)
     return extension
 
 

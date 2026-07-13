@@ -32,6 +32,9 @@ For extension-surface changes, inspect the proof extension at
   arbitrary-line resume or exactly-once external side effects.
 - `Run.state` is derived from DBOS workflow status. Do not add a second writable
   state mirror.
+- Workflow ownership is class identity: the declaring extension namespaces the
+  workflow's `kind` and is resolved from the registry. Never accept, thread, or
+  store an extension per run.
 - Extension authors import the public concern namespaces documented in
   `docs/writing-an-extension.md`, not Druks internals.
 - Backend extension discovery is runtime packaging. Shared-dashboard extension UI

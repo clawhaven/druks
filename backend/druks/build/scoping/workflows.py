@@ -46,7 +46,6 @@ class Scope(Workflow):
             )
         return await cls.start(
             subject=WorkItem.subject_for(item.id),
-            extension="build",
             remote_key=ticket.key,
             source=ticket.provider,
         )

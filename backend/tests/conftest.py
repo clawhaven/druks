@@ -33,6 +33,17 @@ os.environ.setdefault("DRUKS_SECRETS_KEY", base64.b64encode(secrets.token_bytes(
 # integration concerns), so its waits don't reach for a client that isn't there.
 _gate._redis = lambda: None
 
+# A Workflow class resolves its declaring extension at definition time, from
+# packages the loader registers before importing. Tests import workflow modules
+# directly and some declare their own workflows, so both register here — before
+# collection imports any test module.
+from druks.extensions.loader import iter_extensions  # noqa: E402
+from druks.extensions.registry import register_workflow_package  # noqa: E402
+
+iter_extensions()
+for _module in ("test_durable_sdk", "test_notifications_durable"):
+    register_workflow_package(_module, None)
+
 
 class FakeRedis:
     # The subset the run lock and the MCP OAuth cache use; one instance per
@@ -344,12 +355,10 @@ def bind_ambient_session(session) -> None:
     db_session.registry.set(session)
 
 
-def seed_dbos_status(
-    session, workflow_id: str, state: str, *, subject=None, extension=None
-) -> None:
+def seed_dbos_status(session, workflow_id: str, state: str, *, subject=None) -> None:
     """Write the ``dbos.workflow_status`` row a Run's derived ``state`` reads,
-    carrying the subject/extension attributes ``start()`` stamps — the paired
-    half of every persisted run seed (there is no state column)."""
+    carrying the subject attributes ``start()`` stamps — the paired half of
+    every persisted run seed (there is no state column)."""
     from druks.durable.dbos_state import workflow_status
     from druks.models import Base
 
@@ -362,11 +371,9 @@ def seed_dbos_status(
         "cancelled": "CANCELLED",
     }[state]
     now_ms = int(Base.utc_now().timestamp() * 1000)
-    attributes = {}
+    attributes = None
     if subject:
         attributes = {"subject_type": subject["type"], "subject_id": str(subject["id"])}
-    if extension:
-        attributes["extension"] = extension
     # created_at / priority carry server defaults in the dbos schema; the
     # derivation and subject keying read only these.
     session.execute(
@@ -374,7 +381,7 @@ def seed_dbos_status(
             workflow_uuid=workflow_id,
             status=status,
             updated_at=now_ms,
-            attributes=attributes or None,
+            attributes=attributes,
         )
     )
     session.flush()
@@ -408,13 +415,7 @@ def seed_build_run(
     )
     session.add(run)
     session.flush()
-    seed_dbos_status(
-        session,
-        run.id,
-        state,
-        subject={"type": "work_item", "id": work_item_id},
-        extension="build",
-    )
+    seed_dbos_status(session, run.id, state, subject={"type": "work_item", "id": work_item_id})
     item = WorkItem.get(work_item_id)
     item.build_run_id = run.id
     session.flush()

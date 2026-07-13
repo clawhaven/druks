@@ -29,15 +29,6 @@ workflow_status = sa.Table(
 )
 
 
-def extension_expression(run_id: sa.ColumnElement) -> sa.ColumnElement:
-    return (
-        sa.select(workflow_status.c.attributes["extension"].as_string())
-        .where(workflow_status.c.workflow_uuid == run_id)
-        .correlate_except(workflow_status)
-        .scalar_subquery()
-    )
-
-
 def subject_filter(
     run_id: sa.ColumnElement, subject_type: str, subject_id: str
 ) -> sa.ColumnElement:

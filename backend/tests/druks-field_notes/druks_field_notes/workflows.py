@@ -21,6 +21,5 @@ class Summarize(Workflow):
         # Launch policy for a note: one run per note, keyed by its subject.
         return await cls.start(
             subject={"type": FieldNotes.subject_type, "id": note_id},
-            extension=FieldNotes.name,
             note_id=note_id,
         )

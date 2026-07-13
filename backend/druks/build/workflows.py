@@ -146,7 +146,6 @@ class BuildWorkflow(Workflow):
             raise ValueError(f"dispatching a build for unknown work item {work_item_id}")
         run_id = await cls.start(
             subject=WorkItem.subject_for(item.id),
-            extension="build",
             repo=item.repo,
             source=item.source,
             ticket_ref=item.remote_key,

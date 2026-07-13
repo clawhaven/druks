@@ -84,6 +84,7 @@ function RunView({
 
   const initialLeft: LeftTab = files.prompt ? 'prompt' : 'response'
   const [leftTab, setLeftTab] = useState<LeftTab>(initialLeft)
+  const activeFile = leftTab === 'prompt' ? files.prompt : files.response
 
   return (
     <Page scroll="internal" className="page-run">
@@ -143,13 +144,7 @@ function RunView({
               response
             </button>
           </div>
-          <FilePane
-            url={
-              leftTab === 'prompt'
-                ? (files.prompt?.url ?? null)
-                : (files.response?.url ?? null)
-            }
-          />
+          <FilePane url={activeFile ? buildApi.transcriptFile(call.id, activeFile.name) : null} />
         </section>
 
         <section className="run-col run-col-right">

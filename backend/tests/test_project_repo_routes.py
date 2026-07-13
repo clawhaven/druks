@@ -21,8 +21,8 @@ def _stub_profile_start(monkeypatch):
 
     calls: list[dict] = []
 
-    async def _start(cls, *, subject, extension=None, **input):
-        calls.append({"subject": subject, "extension": extension, **input})
+    async def _start(cls, *, subject, **input):
+        calls.append({"subject": subject, **input})
         return "fake-run-id"
 
     monkeypatch.setattr(Profile, "start", classmethod(_start))
@@ -41,7 +41,6 @@ def test_adding_a_repo_dispatches_a_profile_run(client: TestClient, monkeypatch)
     assert calls == [
         {
             "subject": {"type": "project_repo", "id": repo["id"]},
-            "extension": "build",
             "repo_id": repo["id"],
         }
     ]
@@ -63,7 +62,6 @@ def test_profile_endpoint_dispatches(client: TestClient, monkeypatch):
     assert calls == [
         {
             "subject": {"type": "project_repo", "id": repo.id},
-            "extension": "build",
             "repo_id": repo.id,
         }
     ]

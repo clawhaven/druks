@@ -47,7 +47,6 @@ async def policy_push_reprofiles_the_repo(*, repo: str, paths: list, **_: object
         return
     await Profile.start(
         subject={"type": "project_repo", "id": project_repo.id},
-        extension="build",
         repo_id=project_repo.id,
         refresh_only=True,
     )

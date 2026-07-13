@@ -21,6 +21,7 @@ export const buildApi = {
   subjectStreamUrl: (id: number) => subjectApi.stream(BUILD, WORK_ITEM, id),
   transcriptBase: (callId: string) => subjectApi.transcriptBase(BUILD, callId),
   transcriptFiles: (callId: string) => subjectApi.transcriptFiles(BUILD, callId),
+  transcriptFile: (callId: string, name: string) => subjectApi.transcriptFile(BUILD, callId, name),
   history: (limit?: number) => {
     const qs = limit !== undefined ? `?limit=${limit}` : ''
     return getJSON<WorkItemsHistoryResponse>(`/api/${BUILD}/work-items/history${qs}`)

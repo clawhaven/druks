@@ -61,6 +61,42 @@ def autodiscover(package: str) -> list[ModuleType]:
     return modules
 
 
+# Which extension owns each workflow-declaring package, stamped by the loader
+# before it imports any extension module — so a Workflow class resolves its
+# identity at definition time. None marks a package whose workflows belong to
+# no extension (how test modules register themselves).
+_workflow_packages: dict[str, str | None] = {}
+
+
+def register_workflow_package(package: str, extension: str | None) -> None:
+    if package in _workflow_packages:
+        if _workflow_packages[package] != extension:
+            raise ValueError(
+                f"package {package!r} already belongs to "
+                f"{_workflow_packages[package]!r} — {extension!r} can't claim it"
+            )
+        return
+    for registered, owner in _workflow_packages.items():
+        nested = registered.startswith(f"{package}.") or package.startswith(f"{registered}.")
+        if nested and owner != extension:
+            raise ValueError(
+                f"package {package!r} overlaps {registered!r} (owned by {owner!r}) — "
+                "workflow ownership must be unambiguous"
+            )
+    _workflow_packages[package] = extension
+
+
+def resolve_workflow_extension(module: str) -> str | None:
+    """The extension owning ``module``'s nearest registered ancestor package.
+    Raises ``LookupError`` when no registered package contains the module."""
+    prefix = module
+    while prefix:
+        if prefix in _workflow_packages:
+            return _workflow_packages[prefix]
+        prefix = prefix.rpartition(".")[0]
+    raise LookupError(module)
+
+
 webhooks = Registry("webhooks", key=lambda cls: f"{cls.__module__}.{cls.__qualname__}")
 workflows = Registry("workflows", key=lambda cls: cls.kind)
 agents = Registry("agents", key=lambda agent: agent.id)

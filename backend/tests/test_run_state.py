@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from unittest import mock
 
+import druks.build.workflows  # noqa: F401  # registers build.build_workflow, the seeded kind
 import pytest
 from conftest import make_test_work_item, seed_build_run, seed_run
 from dbos._error import DBOSWorkflowCancelledError
@@ -143,7 +144,6 @@ async def test_facts_and_event_land_before_a_raising_subscriber(db_session, _inl
             run.id,
             RunState.PENDING_INPUT,
             subject={"type": "work_item", "id": item.id},
-            extension="build",
             facts={"input_gate": "review_work", "input_request": {"label": "Review"}},
         )
 
@@ -176,7 +176,6 @@ async def test_lifecycle_subscribers_get_the_payload_before_dbos_commits(db_sess
         run.id,
         RunState.FINISHED,
         subject={"type": "work_item", "id": item.id},
-        extension="build",
         result={"status": "ok"},
     )
 
@@ -197,7 +196,7 @@ async def test_cancellation_passes_through_untouched(db_session, _inline_steps):
         raise DBOSWorkflowCancelledError(f"workflow {run.id} cancelled")
 
     with pytest.raises(DBOSWorkflowCancelledError):
-        await _execute_run(run.id, run.kind, {"type": "work_item", "id": item.id}, "build", body)
+        await _execute_run(run.id, run.kind, {"type": "work_item", "id": item.id}, body)
 
     ambient_session().expire_all()
     assert Run.get(run.id).failure is None
@@ -226,7 +225,7 @@ async def test_failure_writes_the_reason_and_reraises(db_session, _inline_steps)
         raise FatalError("closed at review")
 
     with pytest.raises(FatalError):
-        await _execute_run(run.id, run.kind, {"type": "work_item", "id": item.id}, "build", body)
+        await _execute_run(run.id, run.kind, {"type": "work_item", "id": item.id}, body)
 
     ambient_session().expire_all()
     row = Run.get(run.id)
@@ -253,7 +252,7 @@ async def test_gate_timeout_stamps_its_failure_code(db_session, _inline_steps):
         raise GateTimeout("review_work")
 
     with pytest.raises(GateTimeout):
-        await _execute_run(run.id, run.kind, {"type": "work_item", "id": item.id}, "build", body)
+        await _execute_run(run.id, run.kind, {"type": "work_item", "id": item.id}, body)
 
     ambient_session().expire_all()
     assert Run.get(run.id).failure_code == "gate_timeout"

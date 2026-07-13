@@ -97,11 +97,7 @@ def _parked_scope_run(session, *, work_item_id):
     session.add(run)
     session.flush()
     seed_dbos_status(
-        session,
-        run.id,
-        "pending_input",
-        subject={"type": "work_item", "id": work_item_id},
-        extension="build",
+        session, run.id, "pending_input", subject={"type": "work_item", "id": work_item_id}
     )
     return run
 
