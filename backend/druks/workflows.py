@@ -26,7 +26,8 @@ from druks.durable.exceptions import FatalError, GateTimeout, SubjectlessGate, W
 from druks.durable.models import AgentCall, Run
 from druks.durable.schemas import AgentCallResponse, SubjectActivity, SubjectSummary
 from druks.events.models import Event
-from druks.extensions.registry import resolve_workflow_extension, workflows
+from druks.extensions.loader import resolve_workflow_extension
+from druks.extensions.registry import workflows
 from druks.extensions.settings import (
     coerce_setting_value,
     validate_setting_override,

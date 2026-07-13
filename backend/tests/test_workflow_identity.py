@@ -7,13 +7,10 @@ from druks.durable.exceptions import WorkflowError
 from druks.durable.models import Run
 from druks.durable.schemas import get_display_label
 from druks.events.models import Event
-from druks.extensions import registry as extensions_registry
+from druks.extensions import loader as extensions_loader
 from druks.extensions.exceptions import MalformedExtension
-from druks.extensions.registry import (
-    register_workflow_package,
-    resolve_workflow_extension,
-    workflows,
-)
+from druks.extensions.loader import register_workflow_package, resolve_workflow_extension
+from druks.extensions.registry import workflows
 from druks.usage.workflows import PollUsage
 from druks.workflows import Workflow, _log_run_event, step
 
@@ -22,11 +19,11 @@ from druks.workflows import Workflow, _log_run_event, step
 def _isolated_registrations():
     # Every test here mutates the package-owner map and the workflows registry;
     # restore both so the suite keeps seeing only the installed extensions.
-    packages = dict(extensions_registry._workflow_packages)
+    packages = dict(extensions_loader._workflow_packages)
     items = dict(workflows._items)
     yield
-    extensions_registry._workflow_packages.clear()
-    extensions_registry._workflow_packages.update(packages)
+    extensions_loader._workflow_packages.clear()
+    extensions_loader._workflow_packages.update(packages)
     workflows._items = items
 
 

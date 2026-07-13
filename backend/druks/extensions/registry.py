@@ -4,8 +4,6 @@ from collections.abc import Callable
 from types import ModuleType
 from typing import Any
 
-from .exceptions import MalformedExtension
-
 # Leaf-module names that carry self-registering capabilities. ``autodiscover``
 # imports exactly these (``routes`` defines routers the loader mounts; the rest
 # fire registration as an import side effect). The set is the single source of
@@ -61,44 +59,6 @@ def autodiscover(package: str) -> list[ModuleType]:
             continue
         modules.append(importlib.import_module(info.name))
     return modules
-
-
-# Which extension owns each workflow-declaring package, stamped by the loader
-# before it imports any extension module — so a Workflow class resolves its
-# identity at definition time. None marks a package whose workflows belong to
-# no extension (how test modules register themselves).
-_workflow_packages: dict[str, str | None] = {}
-
-
-def register_workflow_package(package: str, extension: str | None) -> None:
-    # Conflicting or overlapping claims are a packaging mistake — two installs
-    # can't share a workflow package, so this raises the loader's own taxonomy.
-    if package in _workflow_packages:
-        if _workflow_packages[package] != extension:
-            raise MalformedExtension(
-                f"package {package!r} already belongs to "
-                f"{_workflow_packages[package]!r} — {extension!r} can't claim it"
-            )
-        return
-    for registered, owner in _workflow_packages.items():
-        nested = registered.startswith(f"{package}.") or package.startswith(f"{registered}.")
-        if nested and owner != extension:
-            raise MalformedExtension(
-                f"package {package!r} overlaps {registered!r} (owned by {owner!r}) — "
-                "workflow ownership must be unambiguous"
-            )
-    _workflow_packages[package] = extension
-
-
-def resolve_workflow_extension(module: str) -> str | None:
-    """The extension owning ``module``'s nearest registered ancestor package.
-    Raises ``LookupError`` when no registered package contains the module."""
-    prefix = module
-    while prefix:
-        if prefix in _workflow_packages:
-            return _workflow_packages[prefix]
-        prefix = prefix.rpartition(".")[0]
-    raise LookupError(module)
 
 
 webhooks = Registry("webhooks", key=lambda cls: f"{cls.__module__}.{cls.__qualname__}")

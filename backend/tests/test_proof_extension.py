@@ -49,7 +49,7 @@ def external_package():
     ``Note`` class is declared once — a re-declaration into the shared metadata
     collides."""
     from blinker import signal
-    from druks.extensions import registry as extensions_registry
+    from druks.extensions import loader as extensions_loader
     from druks.extensions.registry import agents, webhooks, workflows
     from druks.models import Base
 
@@ -57,7 +57,7 @@ def external_package():
 
     tables = set(Base.metadata.tables)
     registries = {registry: dict(registry._items) for registry in (agents, webhooks, workflows)}
-    packages = dict(extensions_registry._workflow_packages)
+    packages = dict(extensions_loader._workflow_packages)
     finished = signal("run.finished")
     receivers = dict(finished.receivers)
     try:
@@ -68,8 +68,8 @@ def external_package():
             Base.metadata.remove(Base.metadata.tables[name])
         for registry, snapshot in registries.items():
             registry._items = snapshot
-        extensions_registry._workflow_packages.clear()
-        extensions_registry._workflow_packages.update(packages)
+        extensions_loader._workflow_packages.clear()
+        extensions_loader._workflow_packages.update(packages)
         finished.receivers = receivers
         for name in [m for m in sys.modules if m == _PACKAGE or m.startswith(f"{_PACKAGE}.")]:
             del sys.modules[name]

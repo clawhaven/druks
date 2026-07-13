@@ -13,8 +13,7 @@ from druks.database import (
     create_engine_from_url,
     init_db,
 )
-from druks.extensions.loader import iter_extensions
-from druks.extensions.registry import register_workflow_package
+from druks.extensions.loader import iter_extensions, register_workflow_package
 from druks.settings import Settings
 from sqlalchemy.orm import Session
 
