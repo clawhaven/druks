@@ -14,6 +14,12 @@ if TYPE_CHECKING:
 _GROUP = "druks.extensions"
 
 
+def _entry_package(entry: "EntryPoint") -> str:
+    # The ``<package>/extension.py`` convention: the entry module's parent is
+    # the extension's package — the same default ``Extension.package`` takes.
+    return entry.module.rsplit(".", 1)[0]
+
+
 def iter_extensions() -> list[type[Extension]]:
     """Every installed extension, resolved from the ``druks.extensions`` entry points.
     Loading an entry point imports the extension's class. An extension that fails to
@@ -25,7 +31,7 @@ def iter_extensions() -> list[type[Extension]]:
     # class — including one the first entry's import pulls in — resolves its
     # declaring extension at definition time.
     for entry in entries:
-        register_workflow_package(entry.module.rsplit(".", 1)[0], entry.name)
+        register_workflow_package(_entry_package(entry), entry.name)
     extensions: list[type[Extension]] = []
     seen: set[str] = set()
     for entry in entries:
@@ -86,8 +92,9 @@ def _resolve(name: str) -> type[Extension]:
             f"extension {name!r} is declared by {len(matches)} installed packages "
             f"({', '.join(e.value for e in matches)}) — uninstall all but one"
         )
-    with claimed_workflow_package(matches[0].module.rsplit(".", 1)[0], name):
-        extension = _load_entry(matches[0])
+    entry = matches[0]
+    with claimed_workflow_package(_entry_package(entry), name):
+        extension = _load_entry(entry)
         # The entry-point key must equal the class's ``name`` — the key scopes the
         # /api, settings, and migration namespaces, which is what lets the
         # duplicate-key check above stand in for a duplicate-name check without

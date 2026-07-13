@@ -13,6 +13,8 @@ from druks.database import (
     create_engine_from_url,
     init_db,
 )
+from druks.extensions.loader import iter_extensions
+from druks.extensions.registry import register_workflow_package
 from druks.settings import Settings
 from sqlalchemy.orm import Session
 
@@ -37,12 +39,9 @@ _gate._redis = lambda: None
 # packages the loader registers before importing. Tests import workflow modules
 # directly and some declare their own workflows, so both register here — before
 # collection imports any test module.
-from druks.extensions.loader import iter_extensions  # noqa: E402
-from druks.extensions.registry import register_workflow_package  # noqa: E402
-
 iter_extensions()
-for _module in ("test_durable_sdk", "test_notifications_durable"):
-    register_workflow_package(_module, None)
+for test_module in ("test_durable_sdk", "test_notifications_durable"):
+    register_workflow_package(test_module, None)
 
 
 class FakeRedis:
