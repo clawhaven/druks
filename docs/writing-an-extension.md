@@ -135,17 +135,6 @@ active run of a workflow kind; a duplicate start returns the active run id.
 Wrap `start()` in a domain `dispatch()` method when the extension needs lookup,
 snapshot, or routing policy before launch.
 
-A workflow's identity comes from the extension that declares it — never from
-the caller. The loader registers each extension's package before importing its
-modules, so `Sweep.extension` is `"night_watch"` and its durable kind is
-`night_watch.sweep`: the class name, lower-snake, namespaced by the extension.
-Declare `kind = "..."` to override the local name only — it is still prefixed,
-and a dotted value is rejected. Because the namespace is the extension name,
-two extensions can ship a `Sweep` without colliding on settings keys, dedup
-slots, or DBOS workflow names. Importing a workflow module outside the loader
-(a bare script, a REPL) fails at class definition until the package is
-registered — load through `druks.extensions.loader` instead.
-
 ### Schedules and settings
 
 Set `every` to declare a cron:

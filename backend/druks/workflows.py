@@ -645,7 +645,7 @@ class Workflow:
                 SetWorkflowAttributes(attributes),
                 enqueue_options,
             ):
-                await run_queue.enqueue_async(cls._entry, wire, subject)
+                await run_queue.enqueue_async(cls._entry, subject, wire)
         except DBOSQueueDeduplicatedError as duplicate:
             holder = _get_dbos_instance()._sys_db.get_deduplicated_workflow(
                 run_queue.name, duplicate.deduplication_id
@@ -689,8 +689,8 @@ def _make_step(kind: str, name: str, method: Callable) -> Callable:
 
 async def _run_instance(
     cls: type[Workflow],
-    input: dict[str, Any] | None = None,
     subject: dict[str, Any] | None = None,
+    input: dict[str, Any] | None = None,
 ) -> Any:
     instance = cls()
     instance._workflow_id = DBOS.workflow_id  # type: ignore[assignment]
@@ -717,9 +717,12 @@ async def _run_instance(
 
 
 def _register_entry(cls: type[Workflow]) -> None:
+    # The closure binds cls outside the durable arguments: the DBOS workflow
+    # NAME (the kind) is what says which class this is, so recovery rebinds by
+    # name and no class object ever rides a checkpoint.
     @DBOS.workflow(name=cls.kind)
-    async def _entry(input: dict[str, Any], subject: dict[str, Any] | None = None) -> None:
-        await _run_instance(cls, input, subject)
+    async def _entry(subject: dict[str, Any] | None, input: dict[str, Any]) -> None:
+        await _run_instance(cls, subject, input)
 
     cls._entry = staticmethod(_entry)  # type: ignore[assignment]
 
