@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from types import ModuleType
 from typing import Any
 
+from .exceptions import MalformedExtension
+
 # Leaf-module names that carry self-registering capabilities. ``autodiscover``
 # imports exactly these (``routes`` defines routers the loader mounts; the rest
 # fire registration as an import side effect). The set is the single source of
@@ -70,9 +72,11 @@ _workflow_packages: dict[str, str | None] = {}
 
 
 def register_workflow_package(package: str, extension: str | None) -> None:
+    # Conflicting or overlapping claims are a packaging mistake — two installs
+    # can't share a workflow package, so this raises the loader's own taxonomy.
     if package in _workflow_packages:
         if _workflow_packages[package] != extension:
-            raise ValueError(
+            raise MalformedExtension(
                 f"package {package!r} already belongs to "
                 f"{_workflow_packages[package]!r} — {extension!r} can't claim it"
             )
@@ -80,7 +84,7 @@ def register_workflow_package(package: str, extension: str | None) -> None:
     for registered, owner in _workflow_packages.items():
         nested = registered.startswith(f"{package}.") or package.startswith(f"{registered}.")
         if nested and owner != extension:
-            raise ValueError(
+            raise MalformedExtension(
                 f"package {package!r} overlaps {registered!r} (owned by {owner!r}) — "
                 "workflow ownership must be unambiguous"
             )

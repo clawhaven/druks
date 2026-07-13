@@ -8,6 +8,7 @@ from druks.durable.models import Run
 from druks.durable.schemas import get_display_label
 from druks.events.models import Event
 from druks.extensions import registry as extensions_registry
+from druks.extensions.exceptions import MalformedExtension
 from druks.extensions.registry import (
     claimed_workflow_package,
     register_workflow_package,
@@ -39,13 +40,13 @@ def _workflow(name: str, module: str, **attrs):
 def test_registration_is_idempotent_and_conflicts_loudly():
     register_workflow_package("alpha_pkg", "alpha")
     register_workflow_package("alpha_pkg", "alpha")
-    with pytest.raises(ValueError, match="already belongs"):
+    with pytest.raises(MalformedExtension, match="already belongs"):
         register_workflow_package("alpha_pkg", "beta")
 
 
 def test_overlapping_ownership_across_owners_is_rejected():
     register_workflow_package("alpha_pkg", "alpha")
-    with pytest.raises(ValueError, match="overlaps"):
+    with pytest.raises(MalformedExtension, match="overlaps"):
         register_workflow_package("alpha_pkg.nested", "beta")
 
 

@@ -86,28 +86,18 @@ def _resolve(name: str) -> type[Extension]:
             f"extension {name!r} is declared by {len(matches)} installed packages "
             f"({', '.join(e.value for e in matches)}) — uninstall all but one"
         )
-    try:
-        with claimed_workflow_package(matches[0].module.rsplit(".", 1)[0], name):
-            extension = _load_entry(matches[0])
-            # The entry-point key must equal the class's ``name``. That key is what
-            # scopes the /api, settings, and migration namespaces here, so this is the
-            # invariant that lets the duplicate-key check above stand in for a
-            # duplicate-name check — without importing sibling extensions and defeating
-            # the point of an app-less, single-extension load. A same-name collision
-            # hidden behind a mismatched key is that sibling's own malformed state,
-            # caught when it is loaded (or at full boot, where iter_extensions()
-            # imports everything).
-            if extension.name != name:
-                raise MalformedExtension(
-                    f"extension {name!r} entry point resolves to an Extension named "
-                    f"{extension.name!r} — the entry-point name must match Extension.name"
-                )
-            register_workflow_package(extension.package, extension.name)
-    except ValueError as error:
-        # A claim the ownership map rejects (a nested-package overlap, one package
-        # split across entry names) is a broken install — same taxonomy as a key
-        # mismatch, caught here so the loader's error contract holds.
-        raise MalformedExtension(str(error)) from error
+    with claimed_workflow_package(matches[0].module.rsplit(".", 1)[0], name):
+        extension = _load_entry(matches[0])
+        # The entry-point key must equal the class's ``name`` — the key scopes the
+        # /api, settings, and migration namespaces, which is what lets the
+        # duplicate-key check above stand in for a duplicate-name check without
+        # importing sibling extensions.
+        if extension.name != name:
+            raise MalformedExtension(
+                f"extension {name!r} entry point resolves to an Extension named "
+                f"{extension.name!r} — the entry-point name must match Extension.name"
+            )
+        register_workflow_package(extension.package, extension.name)
     return extension
 
 
