@@ -8,6 +8,7 @@ from druks.harnesses import base as hbase
 from druks.harnesses.claude import ClaudeHarness
 from druks.harnesses.codex import CodexHarness
 from druks.harnesses.exceptions import HarnessNotConnectedError, OAuthTokenError
+from druks.harnesses.models import HarnessLogin
 
 _NOW = datetime(2026, 6, 4, 20, 0, tzinfo=UTC)
 
@@ -140,13 +141,63 @@ async def test_claude_stale_refreshes_and_persists(monkeypatch, db_session):
     assert block["expiresAt"] == int((_NOW + timedelta(seconds=28800)).timestamp() * 1000)
 
 
-async def test_claude_invalid_grant_leaves_row(monkeypatch, db_session):
+async def test_claude_invalid_grant_drops_row(monkeypatch, db_session):
     _seed_claude(access="old", expires_at=_NOW - timedelta(minutes=1))
     _mock_post(monkeypatch, _resp(400, {"error": "invalid_grant"}))
     result = await ClaudeHarness.rotate_token(now=_NOW)
     assert result.action == "failed"
     assert result.error == "invalid_grant"
+    # A revoked lineage self-disconnects in the same session — no separate commit.
+    assert HarnessLogin.get("claude") is None
+    with pytest.raises(HarnessNotConnectedError):
+        ClaudeHarness.get_credentials()
+
+
+async def test_claude_network_error_keeps_row(monkeypatch, db_session):
+    _seed_claude(access="old", expires_at=_NOW - timedelta(minutes=1))
+    _mock_post(monkeypatch, httpx.ConnectError("boom"))
+    result = await ClaudeHarness.rotate_token(now=_NOW)
+    assert result.error == "network"
     assert ClaudeHarness.get_credentials()["claudeAiOauth"]["accessToken"] == "old"
+
+
+async def test_claude_http_500_keeps_row(monkeypatch, db_session):
+    _seed_claude(access="old", expires_at=_NOW - timedelta(minutes=1))
+    _mock_post(monkeypatch, _resp(500, ""))
+    result = await ClaudeHarness.rotate_token(now=_NOW)
+    assert result.error == "http_500"
+    assert ClaudeHarness.get_credentials()["claudeAiOauth"]["accessToken"] == "old"
+
+
+async def test_claude_bad_response_keeps_row(monkeypatch, db_session):
+    _seed_claude(access="old", expires_at=_NOW - timedelta(minutes=1))
+    _mock_post(monkeypatch, _resp(200, "not json"))
+    result = await ClaudeHarness.rotate_token(now=_NOW)
+    assert result.error == "bad_response"
+    assert ClaudeHarness.get_credentials()["claudeAiOauth"]["accessToken"] == "old"
+
+
+async def test_codex_invalid_grant_drops_row(monkeypatch, db_session):
+    stale = _jwt(int((_NOW + timedelta(hours=1)).timestamp()))
+    _seed_codex(access=stale, refresh="R0")
+    _mock_post(monkeypatch, _resp(400, {"error": "invalid_grant"}))
+    result = await CodexHarness.rotate_token(now=_NOW)
+    assert result.error == "invalid_grant"
+    assert HarnessLogin.get("codex") is None
+    with pytest.raises(HarnessNotConnectedError):
+        CodexHarness.get_credentials()
+
+
+async def test_next_rotation_after_disconnect_is_no_op(monkeypatch, db_session):
+    _seed_claude(access="old", expires_at=_NOW - timedelta(minutes=1))
+    _mock_post(monkeypatch, _resp(400, {"error": "invalid_grant"}))
+    await ClaudeHarness.rotate_token(now=_NOW)
+    # Row is gone; the next tick must short-circuit before any grant POST.
+    calls = _mock_post(monkeypatch, _resp(200, {"access_token": "x"}))
+    result = await ClaudeHarness.rotate_token(now=_NOW)
+    assert result.action == "failed"
+    assert result.error == "no_credentials"
+    assert calls == []
 
 
 async def test_claude_rotate_without_credentials(monkeypatch, db_session):

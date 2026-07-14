@@ -46,9 +46,11 @@ async def _refresh() -> dict[str, object]:
 def _log_result(result: RotationResult) -> None:
     if result.action == "refreshed":
         logger.info("refreshed %s token; expires_at=%s", result.harness, result.expires_at)
-    elif result.action == "failed":
+    elif result.action == "failed" and result.error != "no_credentials":
         # invalid_grant => operator must re-login; network/http_* => transient.
+        # no_credentials is a disconnected harness, not a failure — stay quiet so
+        # a deliberately-disconnected harness doesn't warn every tick.
         logger.warning("token refresh failed for %s: %s", result.harness, result.error)
     elif result.action == "no_refresh_token":
         logger.warning("%s credential has no refresh token; cannot keep it alive", result.harness)
-    # "fresh" is the common no-op; stay quiet.
+    # "fresh" and no_credentials are quiet no-ops.
