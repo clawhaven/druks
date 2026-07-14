@@ -310,6 +310,15 @@ class Harness(ABC):
             grant = await _post_grant(cls._TOKEN_URL, cls._grant_body(refresh_token))
             new_expiry = cls._apply_refresh(data, grant, moment)
         except GrantError as exc:
+            if exc.tag == "invalid_grant":
+                # The provider revoked the refresh lineage; presenting it again
+                # can never succeed. Drop the credential so the harness reads as
+                # disconnected — the UI shows Reconnect and the next tick
+                # short-circuits to no_credentials instead of hammering forever.
+                cls.disconnect()
+                logger.warning(
+                    "%s auto-disconnected after invalid_grant; reconnect to restore", cls.name
+                )
             return RotationResult(cls.name, "failed", error=exc.tag)
         except ValueError:
             return RotationResult(cls.name, "failed", error="bad_response")
