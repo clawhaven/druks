@@ -22,6 +22,7 @@ from druks.usage.models import UsageScrape
 from .datastructures import (
     AgentInvocation,
     CodexToken,
+    CompletedLogin,
     HarnessRunResult,
     OAuthToken,
     ParsedUsage,
@@ -207,26 +208,39 @@ class Harness(ABC):
         return json.dumps(cls.get_credentials())
 
     @classmethod
-    async def login_start(cls) -> tuple[str, str]:
+    async def login_start(
+        cls, *, account_id: str | None = None, proxy_email: str | None = None
+    ) -> tuple[str, str]:
         """Begin a connect flow: mint a PKCE verifier + challenge, build the
         provider's authorize URL, and stash the pending state in Redis under an
         opaque flow id (single-use, short TTL) so concurrent connects never
-        overwrite each other. Returns (authorize URL, flow id)."""
+        overwrite each other. An authenticated reconnect binds the flow to its
+        session account; the trusted proxy identity present at start rides
+        along for account resolution. Returns (authorize URL, flow id)."""
         verifier = _b64url(secrets.token_bytes(64))
         challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
         url, state = cls.authorize_url(verifier=verifier, challenge=challenge)
         flow_id = secrets.token_urlsafe(24)
-        pending = json.dumps({"verifier": verifier, "state": state})
+        pending = json.dumps(
+            {
+                "verifier": verifier,
+                "state": state,
+                "account_id": account_id,
+                "proxy_email": proxy_email,
+            }
+        )
         await get_client().set(_login_pending_key(flow_id), pending, ex=_LOGIN_PENDING_TTL_SECONDS)
         return url, flow_id
 
     @classmethod
-    async def login_complete(cls, *, flow_id: str, pasted: str) -> None:
-        """Finish a connect flow: pop the flow's single-use pending state,
-        parse the paste (bare code or full redirect URL), exchange it, and
-        upsert the login under the provider-reported account. Raises
-        :class:`LoginError` with a user-facing message on any failure — the
-        pending state is gone either way, so a retry re-starts cleanly."""
+    async def login_complete(cls, *, flow_id: str, pasted: str) -> CompletedLogin:
+        """Finish a connect flow's OAuth half: pop the flow's single-use
+        pending state, parse the paste (bare code or full redirect URL), and
+        exchange it. Returns the exchanged credential plus the identities the
+        flow was started under — the caller resolves the account and attaches
+        the login. Raises :class:`LoginError` with a user-facing message on any
+        failure — the pending state is gone either way, so a retry re-starts
+        cleanly."""
         pending = await get_client().getdel(_login_pending_key(flow_id))  # single-use
         if not pending:
             raise LoginError("This sign-in expired — start it again.")
@@ -245,20 +259,13 @@ class Harness(ABC):
                 "that has one and try again."
             )
         _, expires_at = cls._refresh_state(payload)
-        HarnessLogin.connect(
-            harness=cls.name,
+        return CompletedLogin(
             payload=payload,
-            expires_at=expires_at,
             provider_email=provider_email,
+            expires_at=expires_at,
+            account_id=expected["account_id"],
+            proxy_email=expected["proxy_email"],
         )
-
-    @classmethod
-    def disconnect(cls) -> None:
-        """Disconnect the default login — the single connection card's target.
-        Never promotes another one."""
-        row = HarnessLogin.get_default(cls.name)
-        if row:
-            row.delete()
 
     @classmethod
     @abstractmethod

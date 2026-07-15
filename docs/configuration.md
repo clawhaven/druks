@@ -35,21 +35,26 @@ caches, and the sandbox provisioning gate.
 | `DRUKS_ENDPOINT` | Browser-visible dashboard base URL used to build MCP OAuth callbacks |
 | `DRUKS_WEBHOOK_HOST` | Public webhook hostname used by `druks doctor` for its ingress probe |
 | `DRUKS_WEBHOOK_SECRET` | Shared HMAC secret used by bundled webhook integrations |
-| `DRUKS_DASHBOARD_EMAIL` | Email allowed through the shipped Caddy gate |
 | `DRUKS_AUTH_HEADER` | Trusted identity header inserted by the upstream proxy |
 
 `DRUKS_ENDPOINT` and `DRUKS_WEBHOOK_HOST` are different. The first is where an
 operator's browser reaches Druks; the second is the public ingress webhook
 senders reach. They may share a hostname on exe.dev.
 
-FastAPI has no end-user authentication middleware. The shipped remote Caddy
-configuration matches `DRUKS_AUTH_HEADER` against `DRUKS_DASHBOARD_EMAIL`.
-Public `POST /_external/*` routes bypass this identity check and rely on each
-webhook's signature verification. Do not publish the local
-`127.0.0.1:8001` listener directly. Configure the identity proxy to strip or
-overwrite every client-supplied copy of `DRUKS_AUTH_HEADER` before it forwards
-the authenticated identity. Terminate TLS and set HSTS at that public proxy;
-the shipped Caddy listener is loopback HTTP behind the TLS edge.
+Harness login is the account door: signing in to Codex or Claude from the
+dashboard resolves your account and mints the `druks_session` cookie
+(HttpOnly, 30-day sliding TTL in Redis) that every internal API and SSE
+stream requires. The shipped remote Caddy admits any request carrying a
+nonempty `DRUKS_AUTH_HEADER` identity; the backend treats that trusted
+identity as authoritative for account resolution and drops any session whose
+account no longer matches it. Public `POST /_external/*` routes bypass the
+edge identity check and rely on each webhook's signature verification, and
+`POST /api/notifications/{token}/respond` authenticates by its correlation
+token. Do not publish the local `127.0.0.1:8001` listener directly. Configure
+the identity proxy to strip or overwrite every client-supplied copy of
+`DRUKS_AUTH_HEADER` before it forwards the authenticated identity. Terminate
+TLS and set HSTS at that public proxy; the shipped Caddy listener is loopback
+HTTP behind the TLS edge.
 
 ## GitHub Apps
 

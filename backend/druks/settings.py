@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     # Encrypts stored secrets (MCP tokens, OAuth grants) at rest. Required —
     # a missing or malformed key refuses boot; `druks setup` generates one.
     secrets_key: SecretsKey = Field(alias="DRUKS_SECRETS_KEY")
+    # Name of the identity header a trusted edge proxy injects (and strips
+    # from clients). When present on a request it is authoritative for account
+    # resolution, and a session whose account no longer matches it is dropped.
+    # Empty disables proxy identity — a local install has no edge.
+    auth_header: str = Field(default="X-ExeDev-Email", alias="DRUKS_AUTH_HEADER")
     # Where druks may act is the operator Extension's installation set — GitHub's
     # own state: webhooks only arrive from installations, tokens only mint
     # for them. See GitHubClient.list_installation_accounts.

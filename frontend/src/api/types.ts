@@ -188,18 +188,31 @@ export interface Harness {
   fastMode: boolean
   effort: string
   timeout: number
-  // Connection state — false until the operator connects the subscription.
+  // Connection state — the signed-in account's own seat; false until this
+  // account connects the subscription.
   connected: boolean
   kind: string | null
+  /** The authoritative identity (the signed-in account) when connected. */
   account: string | null
+  /** The identity the provider reported for the seat. */
+  providerEmail: string | null
+  /** Authoritative vs provider identity differ — visible, never blocking. */
+  isEmailMismatch: boolean
+  /** This seat is the harness's designated default for execution. */
+  isDefault: boolean
   expiresAt: string | null
+}
+
+export interface Account {
+  id: string
+  email: string
 }
 
 export interface LoginChallenge {
   authorizeUrl: string
   /** Opaque id of this connect attempt; passed back on complete so
    * concurrent sign-ins never clobber each other's pending state. */
-  flowId: string
+  loginId: string
 }
 
 export interface UpdateHarnessRequest {

@@ -321,14 +321,13 @@ async def test_rotation_lock_is_released_after_refresh(monkeypatch, db_session):
     assert await druks.redis.get_client().get(f"druks:harness:refresh:{login.id}") is None
 
 
-def test_disconnect_removes_only_the_default_login_without_promotion(db_session):
+def test_disconnect_removes_only_the_addressed_login_without_promotion(db_session):
     default = _seed_claude(provider_email="a@example.com")
     other = _seed_claude(provider_email="b@example.com")
     assert HarnessLogin.get_default("claude").id == default.id
 
-    ClaudeHarness.disconnect()
+    default.delete()
 
-    assert HarnessLogin.get(default.id) is None
     assert HarnessLogin.get(other.id) is not None
     assert HarnessLogin.get_default("claude") is None  # no silent promotion
     with pytest.raises(HarnessNotConnectedError):
@@ -337,14 +336,15 @@ def test_disconnect_removes_only_the_default_login_without_promotion(db_session)
 
 def test_reconnect_after_default_gone_becomes_default(db_session):
     default = _seed_claude(provider_email="a@example.com")
+    default_id = default.id
     _seed_claude(provider_email="b@example.com")
-    ClaudeHarness.disconnect()
+    default.delete()
     assert HarnessLogin.get_default("claude") is None
 
     # An explicit reconnect of the surviving login is the sanctioned promotion.
     row = _seed_claude(provider_email="b@example.com")
     assert HarnessLogin.get_default("claude").id == row.id
-    assert row.id != default.id
+    assert row.id != default_id
 
 
 def test_connect_scopes_rows_by_harness_and_account(db_session):

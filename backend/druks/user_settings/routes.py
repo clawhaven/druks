@@ -1,11 +1,12 @@
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from druks.accounts.dependencies import current_account
+from druks.accounts.models import Account
 from druks.durable.engine import apply_schedules
 from druks.extensions.loader import iter_extensions
 from druks.extensions.registry import workflows
-from druks.harnesses.exceptions import LoginError
 from druks.harnesses.models import HarnessLogin
 from druks.harnesses.registry import get_harnesses
 from druks.notifications.models import Destination
@@ -44,18 +45,24 @@ def _resolve_harness(name: str) -> tuple[type, HarnessSettings]:
     return harness, row
 
 
+# Connection state is the signed-in account's own login — connect/reconnect
+# live on the /api/auth login surface, not here.
 @router.get("/harnesses", response_model=list[HarnessResponse], response_model_by_alias=True)
-async def list_harness_settings() -> list[HarnessResponse]:
+async def list_harness_settings(
+    account: Account = Depends(current_account),
+) -> list[HarnessResponse]:
     registered = {harness.name for harness in get_harnesses()}
     return [
-        HarnessResponse.from_row(row, HarnessLogin.get_default(row.name))
+        HarnessResponse.from_row(row, HarnessLogin.get_for_account(row.name, account.id), account)
         for row in HarnessSettings.all()
         if row.name in registered
     ]
 
 
 @router.patch("/harnesses/{name}", response_model=HarnessResponse, response_model_by_alias=True)
-async def update_harness_settings(name: str, body: HarnessUpdate) -> HarnessResponse:
+async def update_harness_settings(
+    name: str, body: HarnessUpdate, account: Account = Depends(current_account)
+) -> HarnessResponse:
     harness, row = _resolve_harness(name)
     updates = body.model_dump(exclude_unset=True, by_alias=False)
     if "model" in updates and not harness.has_model(updates["model"]):
@@ -67,43 +74,22 @@ async def update_harness_settings(name: str, body: HarnessUpdate) -> HarnessResp
     _validate_timeout(updates.get("timeout"))
     if updates:
         row.update(**updates)
-    return HarnessResponse.from_row(row, HarnessLogin.get_default(row.name))
-
-
-@router.post("/harnesses/{name}/login/start")
-async def start_harness_login(name: str) -> dict[str, str]:
-    harness, _ = _resolve_harness(name)
-    url, flow_id = await harness.login_start()
-    return {"authorizeUrl": url, "flowId": flow_id}
-
-
-@router.post(
-    "/harnesses/{name}/login/complete",
-    response_model=HarnessResponse,
-    response_model_by_alias=True,
-)
-async def complete_harness_login(
-    name: str,
-    code: str = Body(..., embed=True),
-    flow_id: str = Body(..., embed=True, alias="flowId"),
-) -> HarnessResponse:
-    # code = a bare code, a code#state pair, or the full redirect URL — the
-    # harness parses whichever it is.
-    harness, row = _resolve_harness(name)
-    try:
-        await harness.login_complete(flow_id=flow_id, pasted=code)
-    except LoginError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return HarnessResponse.from_row(row, HarnessLogin.get_default(row.name))
+    return HarnessResponse.from_row(row, HarnessLogin.get_for_account(name, account.id), account)
 
 
 @router.delete(
     "/harnesses/{name}/login", response_model=HarnessResponse, response_model_by_alias=True
 )
-async def disconnect_harness(name: str) -> HarnessResponse:
-    harness, row = _resolve_harness(name)
-    harness.disconnect()
-    return HarnessResponse.from_row(row, HarnessLogin.get_default(row.name))
+async def disconnect_harness(
+    name: str, account: Account = Depends(current_account)
+) -> HarnessResponse:
+    _, row = _resolve_harness(name)
+    login = HarnessLogin.get_for_account(name, account.id)
+    if login:
+        # Only the signed-in account's own login — never another account's, and
+        # never a promotion of one.
+        login.delete()
+    return HarnessResponse.from_row(row, None, account)
 
 
 @router.get("", response_model=UserSettingsResponse, response_model_by_alias=True)

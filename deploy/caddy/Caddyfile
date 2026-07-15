@@ -27,23 +27,19 @@ http://:8000 {
 		reverse_proxy {$DRUKS_UPSTREAM}
 	}
 
-	# Identity is an upstream-injected trusted header matched against the
-	# allowlisted email. DRUKS_AUTH_HEADER defaults to exe.dev's; point it at
-	# another proxy's header (Teleport: X-Forwarded-Email, Cloudflare Access:
+	# Identity is an upstream-injected trusted header: any nonempty value
+	# passes the edge, and the backend resolves it to an account (harness
+	# login is the door; the app's session cookie carries identity from
+	# there). DRUKS_AUTH_HEADER defaults to exe.dev's; point it at another
+	# proxy's header (Teleport: X-Forwarded-Email, Cloudflare Access:
 	# Cf-Access-Authenticated-User-Email, …) to swap the auth edge with no
 	# code change.
 	# The backend serves everything behind the gate — the API, the SPA at /,
 	# extension frontends at /app/<name>. Cache policy for the served
 	# frontends lives with their server (api/app.py), not at the edge.
-	@dashboard_user header {$DRUKS_AUTH_HEADER:X-ExeDev-Email} {$DRUKS_DASHBOARD_EMAIL}
+	@dashboard_user header {$DRUKS_AUTH_HEADER:X-ExeDev-Email} *
 	handle @dashboard_user {
 		reverse_proxy {$DRUKS_UPSTREAM}
-	}
-
-	# Header present but email not allowlisted → deny.
-	@wrong_user header {$DRUKS_AUTH_HEADER:X-ExeDev-Email} *
-	handle @wrong_user {
-		respond "Access denied." 403
 	}
 
 	# No identity header at all. exe.dev passes unauthenticated traffic

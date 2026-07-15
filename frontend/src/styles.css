@@ -2250,3 +2250,10 @@ input.set-select { background-image: none; padding-right: 12px; }
 
 .ins .wic-op-sub { display: inline-flex; align-items: center; gap: 7px; }
 .ins .wic-op-sub-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-faint); box-shadow: none; flex-shrink: 0; }
+
+/* Landing — the unauthenticated door: connect a harness, get a session. */
+.landing { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.landing-card { width: min(440px, 100%); display: flex; flex-direction: column; gap: 14px; padding: 28px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
+.landing-card h1 { font-family: var(--font-mono); font-size: 18px; letter-spacing: 0.08em; }
+.landing-hint { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+.landing-connect { display: flex; flex-direction: column; gap: 9px; }

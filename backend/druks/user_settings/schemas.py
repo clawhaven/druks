@@ -8,6 +8,7 @@ from druks.extensions.settings import field_choices, field_kind
 from druks.schemas import BaseResponse
 
 if TYPE_CHECKING:
+    from druks.accounts.models import Account
     from druks.harnesses.models import HarnessLogin
     from druks.user_settings.models import HarnessSettings
 
@@ -20,16 +21,24 @@ class HarnessResponse(BaseResponse):
     timeout: int
     fast_mode: bool
     allowed_models: list[str]
-    # Connection state, joined in from the harness's default HarnessLogin row —
-    # connected=False until someone connects it from the dashboard.
+    # Connection state, joined in from the signed-in account's own HarnessLogin
+    # row — connected=False until this account connects the harness.
     connected: bool
     kind: str | None
+    # The authoritative identity (the signed-in account) vs the email the
+    # provider reported at connect; unequal shows as a mismatch warning but
+    # never changes authority.
     account: str | None
+    provider_email: str | None
+    is_email_mismatch: bool
+    # Whether this login is the harness's designated default — the row
+    # execution resolves while runs aren't account-aware.
+    is_default: bool
     expires_at: datetime | None
 
     @classmethod
     def from_row(
-        cls, settings: "HarnessSettings", login: "HarnessLogin | None"
+        cls, settings: "HarnessSettings", login: "HarnessLogin | None", account: "Account"
     ) -> "HarnessResponse":
         return cls(
             name=settings.name,
@@ -41,7 +50,12 @@ class HarnessResponse(BaseResponse):
             allowed_models=settings.allowed_models,
             connected=bool(login),
             kind=login.kind if login else None,
-            account=login.provider_email if login else None,
+            account=account.email if login else None,
+            provider_email=login.provider_email if login else None,
+            is_email_mismatch=bool(
+                login and login.provider_email and login.provider_email != account.email
+            ),
+            is_default=bool(login and login.is_default),
             expires_at=login.expires_at if login else None,
         )
 

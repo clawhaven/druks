@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react'
 
+import { authApi } from './client'
+
 type Handler = (data: unknown) => void
 
 export interface UseSSEOptions {
@@ -62,6 +64,16 @@ export function useSSE(url: string, { handlers, onError, enabled = true }: UseSS
 
     const errorListener: EventListener = (event) => {
       onErrorRef.current?.(event)
+      // An SSE error may be an expired session: recheck it instead of letting
+      // EventSource blindly reconnect forever. A dead session closes this
+      // source here and now — authApi.session's 401 also signals the
+      // AuthProvider, whose unmount closes every other stream.
+      void authApi
+        .session()
+        .then((account) => {
+          if (!account) source.close()
+        })
+        .catch(() => undefined)
     }
     source.addEventListener('error', errorListener)
 

@@ -24,6 +24,10 @@ class Account(Base, Uuid7Pk):
         return value.strip().lower()
 
     @classmethod
+    def get(cls, account_id: str) -> "Account | None":
+        return db_session().get(cls, account_id)
+
+    @classmethod
     def get_for_email(cls, email: str) -> "Account | None":
         return db_session().scalar(select(cls).where(cls.email == email.strip().lower()))
 

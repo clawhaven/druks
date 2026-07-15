@@ -127,7 +127,6 @@ services:
     restart: unless-stopped
     environment:
       DRUKS_UPSTREAM: ${DRUKS_UPSTREAM:-127.0.0.1:8001}
-      DRUKS_DASHBOARD_EMAIL: ${DRUKS_DASHBOARD_EMAIL:?set DRUKS_DASHBOARD_EMAIL}
       DRUKS_AUTH_HEADER: ${DRUKS_AUTH_HEADER:-X-ExeDev-Email}
       # ``:-`` so an empty .env value still collapses to the inert loopback
       # default — Caddy treats set-but-empty as a real (broken) site address.

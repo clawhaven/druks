@@ -9,6 +9,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.datastructures import MutableHeaders
 
+from druks.accounts.dependencies import current_account
+from druks.accounts.middleware import SessionCookieReissue
+from druks.accounts.routes import router as auth_router
 from druks.api.artifacts import router as artifacts_router
 from druks.api.runs import router as runs_router
 from druks.database import configure_session, create_engine_from_url, db_session
@@ -17,6 +20,7 @@ from druks.events.routes import router as events_router
 from druks.extensions.loader import iter_extensions, load
 from druks.mcp.catalog import load_mcp_catalog
 from druks.mcp.routes import router as mcp_router
+from druks.notifications.routes import capability_router as notifications_capability_router
 from druks.notifications.routes import router as notifications_router
 from druks.redis import close_client
 from druks.settings import Settings, ensure_data_dirs, load_settings, setup_logging
@@ -167,15 +171,24 @@ async def _unhandled_exception_handler(
 
 # Platform-core routers, mounted by hand at their own prefixes. Extension routers
 # (core, build, usage, …) are discovered and mounted under /api/<extension> by load().
+#
+# Every internal router mounts behind the session gate. The unguarded mounts
+# each carry their own authentication or none by design: health probes,
+# /_external webhooks (provider HMAC/token/signature), the login surface
+# itself, and the token-capability notification respond route. The boundary
+# enumeration test pins this split.
+_session_gate = [Depends(current_account)]
 app.include_router(health_router)
 app.include_router(webhooks_router)
-app.include_router(settings_router)
-app.include_router(skills_router)
-app.include_router(mcp_router)
-app.include_router(notifications_router)
-app.include_router(events_router)
-app.include_router(runs_router)
-app.include_router(artifacts_router)
+app.include_router(auth_router)
+app.include_router(notifications_capability_router)
+app.include_router(settings_router, dependencies=_session_gate)
+app.include_router(skills_router, dependencies=_session_gate)
+app.include_router(mcp_router, dependencies=_session_gate)
+app.include_router(notifications_router, dependencies=_session_gate)
+app.include_router(events_router, dependencies=_session_gate)
+app.include_router(runs_router, dependencies=_session_gate)
+app.include_router(artifacts_router, dependencies=_session_gate)
 load(app)
 
 
@@ -248,3 +261,4 @@ class SpaCacheControl:
 
 serve_spa(app)
 app.add_middleware(SpaCacheControl)
+app.add_middleware(SessionCookieReissue)

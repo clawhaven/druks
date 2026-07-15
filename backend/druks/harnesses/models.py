@@ -77,15 +77,15 @@ class HarnessLogin(Base, Uuid7Pk):
         cls,
         *,
         harness: str,
+        account: Account,
         payload: dict,
         expires_at: datetime | None,
         provider_email: str,
     ) -> "HarnessLogin":
-        """Upsert the account's login for this harness, creating the account
-        from the provider's email when it's new. A login connected while the
-        harness has no default becomes the default; promotion only ever
-        happens through a connect, never a disconnect."""
-        account = Account.get_or_create(provider_email)
+        """Upsert ``account``'s login for this harness — update its existing
+        row or create one. A login connected while the harness has no default
+        becomes the default; promotion only ever happens through a connect,
+        never a disconnect."""
         session = db_session()
         row = cls.get_for_account(harness, account.id)
         if not row:

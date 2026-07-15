@@ -21,6 +21,12 @@ from druks.notifications.services import respond_to_notification
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
+# The respond route rides its own router: it is capability-authenticated by
+# the 256-bit correlation token in its path (like the sessionless /_external
+# response paths), so it mounts without the session gate the rest of this
+# module gets.
+capability_router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+
 
 @router.get("/destinations", response_model=list[DestinationResponse])
 async def list_destinations() -> list[Destination]:
@@ -80,7 +86,7 @@ async def get_notification(notification_id: str) -> Notification:
     return notification
 
 
-@router.post("/{token}/respond", status_code=204)
+@capability_router.post("/{token}/respond", status_code=204)
 async def respond(token: str, body: RespondRequest) -> None:
     # CorruptCorrelationError deliberately propagates: a run_id with no run is data
     # corruption, so it must surface as a logged 500, never a silent 404.

@@ -32,6 +32,20 @@ class CodexToken:
 
 
 @dataclass(frozen=True)
+class CompletedLogin:
+    """A finished PKCE exchange plus the identities the flow was started
+    under — everything account resolution needs."""
+
+    payload: dict
+    provider_email: str
+    expires_at: datetime | None
+    # The session account the flow was bound to at start (a reconnect), and
+    # the trusted proxy identity present at start. None for an initial login.
+    account_id: str | None
+    proxy_email: str | None
+
+
+@dataclass(frozen=True)
 class RotationResult:
     harness: str
     # "refreshed" | "fresh" | "locked" | "no_refresh_token" | "failed"

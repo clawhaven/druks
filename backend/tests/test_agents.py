@@ -107,10 +107,10 @@ async def test_run_outside_workflow_raises():
 
 async def test_run_refuses_unconnected_harness(db_session, tmp_path, monkeypatch, current_run):
     # The precondition fires where the harness is resolved — before any VM work.
-    from druks.harnesses.claude import ClaudeHarness
     from druks.harnesses.exceptions import HarnessNotConnectedError
+    from druks.harnesses.models import HarnessLogin
 
-    ClaudeHarness.disconnect()
+    HarnessLogin.get_default("claude").delete()
     sandbox = _patch_runtime(monkeypatch, tmp_path, {"ok": True})
     _patch_ephemeral(monkeypatch, sandbox)
 
