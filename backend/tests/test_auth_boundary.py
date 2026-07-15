@@ -1,8 +1,7 @@
 import pytest
-from conftest import configure_app_for_test, make_settings
 from druks.accounts.dependencies import current_account
-from fastapi.routing import APIRoute
-from fastapi.testclient import TestClient
+from druks.api.app import app
+from fastapi.routing import APIRoute, _IncludedRouter
 
 # The complete set of API paths allowed to skip the session gate; each carries
 # its own authentication or is safe by construction. Anything new that lands
@@ -17,28 +16,27 @@ EXEMPT_API_PATHS = {
 }
 
 
+def _walk(routes):
+    # FastAPI 0.139 defers include_router into _IncludedRouter nodes;
+    # effective_candidates() materializes each one with its include-time
+    # dependencies merged in — the only view that shows the real gate.
+    for route in routes:
+        if isinstance(route, _IncludedRouter):
+            yield from _walk(route.effective_candidates())
+        elif isinstance(route, APIRoute) or isinstance(
+            getattr(route, "original_route", None), APIRoute
+        ):
+            yield route
+        elif hasattr(route, "routes"):
+            yield from _walk(route.routes)
+
+
 @pytest.fixture
-def api_routes(tmp_path) -> list[APIRoute]:
-    app = configure_app_for_test(settings=make_settings(tmp_path))
-    # FastAPI mounts included routers lazily; serving one request materializes
-    # the full route table before the walk.
-    with TestClient(app) as client:
-        client.get("/health")
-
-    found: list[APIRoute] = []
-
-    def walk(routes) -> None:
-        for route in routes:
-            if isinstance(route, APIRoute):
-                found.append(route)
-            elif hasattr(route, "routes"):
-                walk(route.routes)
-
-    walk(app.router.routes)
-    return found
+def api_routes():
+    return list(_walk(app.router.routes))
 
 
-def _session_gated(route: APIRoute) -> bool:
+def _session_gated(route) -> bool:
     return any(dependency.call is current_account for dependency in route.dependant.dependencies)
 
 

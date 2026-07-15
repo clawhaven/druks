@@ -45,7 +45,7 @@ def proxy_identity(request: Request) -> str | None:
     header = request.app.state.settings.auth_header
     if not header:
         return None
-    value = request.headers.get(header, "")
-    if not value.strip():
+    value = request.headers.get(header, "").strip().lower()
+    if not value:
         return None
-    return Account.normalize_email(value)
+    return value

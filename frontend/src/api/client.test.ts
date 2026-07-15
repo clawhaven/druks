@@ -26,10 +26,12 @@ describe('API error messages', () => {
 
 describe('session identity', () => {
   it('sends the session cookie on every call', async () => {
-    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }))
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(
+      async () => new Response('{}', { status: 200 }),
+    )
     vi.stubGlobal('fetch', fetchMock)
     await getJSON('/api/x')
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: 'same-origin' })
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ credentials: 'same-origin' })
   })
 
   it('types a 401 and broadcasts the expiry', async () => {

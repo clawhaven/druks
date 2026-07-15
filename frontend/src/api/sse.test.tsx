@@ -45,7 +45,9 @@ class FakeEventSource implements EventTarget {
 }
 
 function stubSession(body: string, status: number) {
-  const fetchMock = vi.fn(async () => new Response(body, { status }))
+  const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(
+    async () => new Response(body, { status }),
+  )
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
 }

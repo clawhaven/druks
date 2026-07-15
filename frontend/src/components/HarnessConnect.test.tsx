@@ -67,10 +67,12 @@ describe('HarnessConnect', () => {
       '/api/auth/harnesses/claude/login/start': { authorizeUrl: 'https://x/auth', loginId: 'L1' },
       '/api/auth/harnesses/claude/login/complete': { id: 'a1', email: 'me@example.com' },
     }
-    const fetchMock = vi.fn(async (url: string) => {
-      const body = responses[url]
-      return new Response(JSON.stringify(body ?? {}), { status: body ? 200 : 404 })
-    })
+    const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(
+      async (url) => {
+        const body = responses[url]
+        return new Response(JSON.stringify(body ?? {}), { status: body ? 200 : 404 })
+      },
+    )
     vi.stubGlobal('fetch', fetchMock)
 
     renderCard(harness())
@@ -87,8 +89,7 @@ describe('HarnessConnect', () => {
     const completeCall = fetchMock.mock.calls.find(
       ([url]) => url === '/api/auth/harnesses/claude/login/complete',
     )
-    expect(completeCall).toBeTruthy()
-    expect(JSON.parse(completeCall![1]!.body as string)).toEqual({
+    expect(JSON.parse(String(completeCall?.[1]?.body))).toEqual({
       code: 'the-code',
       loginId: 'L1',
     })
