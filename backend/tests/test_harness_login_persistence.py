@@ -60,8 +60,11 @@ def _committed(engine, work):
 
 
 def _connect(payload: dict) -> str:
+    from druks.accounts.models import Account
+
     row = HarnessLogin.connect(
         harness="claude",
+        account=Account.get_or_create("op@example.com"),
         payload=payload,
         expires_at=None,
         provider_email="op@example.com",

@@ -5,6 +5,7 @@ import type { Account, LoginChallenge } from '../api/types'
 
 // The one login flow (PKCE paste-back against /api/auth) shared by the landing
 // screen and the Settings reconnect — the same client methods, the same steps.
+// eslint-disable-next-line react-refresh/only-export-components -- hook co-located with its steps UI
 export function useHarnessLogin(name: string, onDone: (account: Account) => void | Promise<void>) {
   const [challenge, setChallenge] = useState<LoginChallenge | null>(null)
   const [code, setCode] = useState('')

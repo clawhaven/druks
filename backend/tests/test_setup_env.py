@@ -150,7 +150,7 @@ def test_custom_pem_location_is_not_boot_gated(tmp_path):
     """A PEM outside the install dir can't be checked pre-boot — doctor owns
     that post-boot; setup must not block on it."""
     env_path = tmp_path / ".env"
-    answers = iter(["op@e.com", "111", "222", "", "", "", "t.ts.net", "", "", "tok"])
+    answers = iter(["111", "222", "", "", "", "t.ts.net", "", "", "tok"])
     _run(env_path, interactive=True, input_fn=lambda _p: next(answers))
     body = env_path.read_text().replace(
         "GITHUB_OPERATOR_PEM=/home/op/druks/secrets/operator.pem",
