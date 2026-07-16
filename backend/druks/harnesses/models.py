@@ -4,7 +4,7 @@ from sqlalchemy import ForeignKey, Index, String, UniqueConstraint, select, text
 from sqlalchemy.orm import Mapped, mapped_column, validates
 from sqlalchemy.orm.attributes import flag_modified
 
-from druks.accounts.models import Account
+from druks.accounts.models import Account, canonical_email
 from druks.core.models import Uuid7Pk
 from druks.database import db_session
 from druks.models import Base
@@ -41,9 +41,7 @@ class HarnessLogin(Base, Uuid7Pk):
 
     @validates("provider_email")
     def _canonical_provider_email(self, _key: str, value: str | None) -> str | None:
-        if not value:
-            return None
-        return value.strip().lower()
+        return canonical_email(value) if value else None
 
     @classmethod
     def get(cls, login_id: str) -> "HarnessLogin | None":

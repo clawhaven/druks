@@ -8,6 +8,13 @@ from druks.database import db_session
 from druks.models import Base
 
 
+def canonical_email(value: str) -> str:
+    """The one email shape stored, compared, and displayed — no second form
+    anywhere. Every write goes through it (the model validators) and so does
+    every lookup key."""
+    return value.strip().lower()
+
+
 class Account(Base, Uuid7Pk):
     __tablename__ = "accounts"
 
@@ -19,13 +26,11 @@ class Account(Base, Uuid7Pk):
 
     @validates("email")
     def _canonical_email(self, _key: str, value: str) -> str:
-        # Canonical on write, so the stored value is the one every reader
-        # compares, displays, and keys on — no second shape anywhere.
-        return value.strip().lower()
+        return canonical_email(value)
 
     @classmethod
     def get_for_email(cls, email: str) -> "Account | None":
-        return db_session().scalar(select(cls).where(cls.email == email.strip().lower()))
+        return db_session().scalar(select(cls).where(cls.email == canonical_email(email)))
 
     @classmethod
     def get_or_create(cls, email: str) -> "Account":
