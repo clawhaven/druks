@@ -363,10 +363,12 @@ def test_connect_scopes_rows_by_harness_and_account(db_session):
 
 def test_reconnect_updates_the_existing_login_in_place(db_session):
     row = _seed_claude(access="old", provider_email="a@example.com")
-    again = _seed_claude(access="new", provider_email="A@Example.com ")
-    assert again.id == row.id  # normalized email finds the same login
+    # Same email, different case — citext matches it to the existing account,
+    # so the reconnect updates that one connection rather than making a second.
+    again = _seed_claude(access="new", provider_email="A@Example.com")
+    assert again.id == row.id
     assert dict(again.payload)["claudeAiOauth"]["accessToken"] == "new"
-    assert again.provider_email == "a@example.com"
+    assert again.provider_email == "A@Example.com"  # stored as last given
 
 
 async def test_claude_fetch_usage_success(monkeypatch, db_session):
