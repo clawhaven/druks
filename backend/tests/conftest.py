@@ -356,11 +356,11 @@ def bind_ambient_session(session) -> None:
 def connect_harness(harness_cls, payload: dict, *, provider_email: str = "op@example.com"):
     """Seed a connected seat the way a finished connect flow would: an account
     keyed by the provider email plus the harness's login row, expiry mirrored
-    out of the payload. Returns the HarnessLogin row."""
-    from druks.harnesses.models import HarnessLogin
+    out of the payload. Returns the HarnessConnection row."""
+    from druks.harnesses.models import HarnessConnection
 
     _, expires_at = harness_cls._refresh_state(payload)
-    return HarnessLogin.connect(
+    return HarnessConnection.connect(
         harness=harness_cls.name,
         payload=payload,
         expires_at=expires_at,

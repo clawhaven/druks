@@ -35,7 +35,7 @@ from .exceptions import (
     LoginError,
     OAuthTokenError,
 )
-from .models import HarnessLogin
+from .models import HarnessConnection
 
 if TYPE_CHECKING:
     from druks.sandbox.datastructures import McpServer
@@ -190,7 +190,7 @@ class Harness(ABC):
         resolves while runs aren't account-aware. Raises
         :class:`HarnessNotConnectedError`, with the connect-in-Settings fix,
         when no login is designated."""
-        row = HarnessLogin.get_default(cls.name)
+        row = HarnessConnection.get_default(cls.name)
         data = dict(row.payload) if row else None
         if not data:
             raise HarnessNotConnectedError(
@@ -245,7 +245,7 @@ class Harness(ABC):
                 "that has one and try again."
             )
         _, expires_at = cls._refresh_state(payload)
-        HarnessLogin.connect(
+        HarnessConnection.connect(
             harness=cls.name,
             payload=payload,
             expires_at=expires_at,
@@ -256,7 +256,7 @@ class Harness(ABC):
     def disconnect(cls) -> None:
         """Disconnect the default login — the single connection card's target.
         Never promotes another one."""
-        row = HarnessLogin.get_default(cls.name)
+        row = HarnessConnection.get_default(cls.name)
         if row:
             row.delete()
 
@@ -310,7 +310,7 @@ class Harness(ABC):
         reports ``locked`` without touching the provider — two concurrent
         grants on one refresh lineage trip the provider's reuse detection."""
         moment = now or _utc_now()
-        row = HarnessLogin.reload(login_id)
+        row = HarnessConnection.reload(login_id)
         if not row:
             return RotationResult(cls.name, "failed", error="no_credentials", login_id=login_id)
         data = dict(row.payload)
@@ -329,7 +329,7 @@ class Harness(ABC):
         try:
             # Re-read after winning the lock: the previous holder may have
             # advanced this lineage (or deleted the row) after our first read.
-            row = HarnessLogin.reload(login_id)
+            row = HarnessConnection.reload(login_id)
             if not row:
                 return RotationResult(
                     cls.name, "failed", error="no_credentials", login_id=login_id
@@ -374,7 +374,7 @@ class Harness(ABC):
             await redis.delete(lock_key)
 
     @classmethod
-    def needs_refresh(cls, login: HarnessLogin) -> bool:
+    def needs_refresh(cls, login: HarnessConnection) -> bool:
         """Whether the row's access token is within its refresh margin — the
         cheap read the refresh workflow uses to decide whether to gate
         provisioning before rotating. An unreadable/expired credential reads

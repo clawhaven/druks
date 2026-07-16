@@ -4,7 +4,7 @@ import psycopg
 import pytest
 from druks.database import configure_session, db_session, get_session
 from druks.harnesses.claude import ClaudeHarness
-from druks.harnesses.models import HarnessLogin
+from druks.harnesses.models import HarnessConnection
 from sqlalchemy import create_engine, text
 
 # The credential store's whole job is to persist a rotated credential dict
@@ -60,7 +60,7 @@ def _committed(engine, work):
 
 
 def _connect(payload: dict) -> str:
-    row = HarnessLogin.connect(
+    row = HarnessConnection.connect(
         harness="claude",
         payload=payload,
         expires_at=None,
@@ -79,7 +79,7 @@ def test_rotation_persists_new_payload_across_sessions(engine):
     )
 
     def rotate_in_place():
-        row = HarnessLogin.get(login_id)
+        row = HarnessConnection.get(login_id)
         data = dict(row.payload)
         data["claudeAiOauth"]["accessToken"] = "new"
         row.update_payload(data, expires_at=None)
@@ -87,7 +87,7 @@ def test_rotation_persists_new_payload_across_sessions(engine):
     _committed(engine, rotate_in_place)
 
     block = _committed(
-        engine, lambda: dict(HarnessLogin.get(login_id).payload)["claudeAiOauth"]
+        engine, lambda: dict(HarnessConnection.get(login_id).payload)["claudeAiOauth"]
     )
     assert block["accessToken"] == "new"
 

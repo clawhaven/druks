@@ -2,7 +2,7 @@ import contextlib
 import logging
 
 from druks.harnesses.datastructures import RotationResult
-from druks.harnesses.models import HarnessLogin
+from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harnesses
 from druks.sandbox import gate
 from druks.workflows import Workflow
@@ -22,7 +22,7 @@ class RefreshTokens(Workflow):
 
 async def _refresh() -> dict[str, object]:
     by_name = {harness.name: harness for harness in get_harnesses()}
-    logins = [login for login in HarnessLogin.list_all() if login.harness in by_name]
+    logins = [login for login in HarnessConnection.list_all() if login.harness in by_name]
 
     # rotate_token is the source of truth for what's due: it no-ops ("fresh", no
     # server call, no invalidation) any row outside its margin, so rotating all

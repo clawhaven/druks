@@ -6,7 +6,7 @@ from druks.durable.engine import apply_schedules
 from druks.extensions.loader import iter_extensions
 from druks.extensions.registry import workflows
 from druks.harnesses.exceptions import LoginError
-from druks.harnesses.models import HarnessLogin
+from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harnesses
 from druks.notifications.models import Destination
 
@@ -48,7 +48,7 @@ def _resolve_harness(name: str) -> tuple[type, HarnessSettings]:
 async def list_harness_settings() -> list[HarnessResponse]:
     registered = {harness.name for harness in get_harnesses()}
     return [
-        HarnessResponse.from_row(row, HarnessLogin.get_default(row.name))
+        HarnessResponse.from_row(row, HarnessConnection.get_default(row.name))
         for row in HarnessSettings.all()
         if row.name in registered
     ]
@@ -67,7 +67,7 @@ async def update_harness_settings(name: str, body: HarnessUpdate) -> HarnessResp
     _validate_timeout(updates.get("timeout"))
     if updates:
         row.update(**updates)
-    return HarnessResponse.from_row(row, HarnessLogin.get_default(row.name))
+    return HarnessResponse.from_row(row, HarnessConnection.get_default(row.name))
 
 
 @router.post("/harnesses/{name}/login/start")
@@ -94,7 +94,7 @@ async def complete_harness_login(
         await harness.login_complete(flow_id=flow_id, pasted=code)
     except LoginError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return HarnessResponse.from_row(row, HarnessLogin.get_default(row.name))
+    return HarnessResponse.from_row(row, HarnessConnection.get_default(row.name))
 
 
 @router.delete(
@@ -103,7 +103,7 @@ async def complete_harness_login(
 async def disconnect_harness(name: str) -> HarnessResponse:
     harness, row = _resolve_harness(name)
     harness.disconnect()
-    return HarnessResponse.from_row(row, HarnessLogin.get_default(row.name))
+    return HarnessResponse.from_row(row, HarnessConnection.get_default(row.name))
 
 
 @router.get("", response_model=UserSettingsResponse, response_model_by_alias=True)

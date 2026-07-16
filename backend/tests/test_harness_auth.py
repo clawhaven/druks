@@ -11,7 +11,7 @@ from druks.harnesses import base as hbase
 from druks.harnesses.claude import ClaudeHarness
 from druks.harnesses.codex import CodexHarness
 from druks.harnesses.exceptions import HarnessNotConnectedError, OAuthTokenError
-from druks.harnesses.models import HarnessLogin
+from druks.harnesses.models import HarnessConnection
 
 _NOW = datetime(2026, 6, 4, 20, 0, tzinfo=UTC)
 
@@ -33,7 +33,7 @@ def _claude_payload(*, access="A0", refresh="R0", expires_at=None, extra=None) -
     return {"claudeAiOauth": block}
 
 
-def _seed_claude(*, provider_email="op@example.com", **kwargs) -> HarnessLogin:
+def _seed_claude(*, provider_email="op@example.com", **kwargs) -> HarnessConnection:
     return connect_harness(ClaudeHarness, _claude_payload(**kwargs), provider_email=provider_email)
 
 
@@ -45,7 +45,7 @@ def _codex_payload(*, access=None, refresh="R0", account_id="acc-1", id_token="i
     return {"auth_mode": "chatgpt", "OPENAI_API_KEY": None, "tokens": tokens}
 
 
-def _seed_codex(*, provider_email="op@example.com", **kwargs) -> HarnessLogin:
+def _seed_codex(*, provider_email="op@example.com", **kwargs) -> HarnessConnection:
     return connect_harness(CodexHarness, _codex_payload(**kwargs), provider_email=provider_email)
 
 
@@ -160,7 +160,7 @@ async def test_claude_invalid_grant_drops_row(monkeypatch, db_session):
     assert result.error == "invalid_grant"
     # A revoked lineage self-disconnects and commits inside the rotation — the
     # deletion never rides (or rolls back with) the tick's later commit.
-    assert HarnessLogin.get_default("claude") is None
+    assert HarnessConnection.get_default("claude") is None
     with pytest.raises(HarnessNotConnectedError):
         ClaudeHarness.get_credentials()
 
@@ -195,7 +195,7 @@ async def test_codex_invalid_grant_drops_row(monkeypatch, db_session):
     _mock_post(monkeypatch, _resp(400, {"error": "invalid_grant"}))
     result = await CodexHarness.rotate_token(login.id, now=_NOW)
     assert result.error == "invalid_grant"
-    assert HarnessLogin.get_default("codex") is None
+    assert HarnessConnection.get_default("codex") is None
     with pytest.raises(HarnessNotConnectedError):
         CodexHarness.get_credentials()
 
@@ -275,8 +275,8 @@ async def test_rotation_touches_only_the_addressed_row(monkeypatch, db_session):
     )
     result = await ClaudeHarness.rotate_token(stale_id, now=_NOW)
     assert result.action == "refreshed"
-    assert dict(HarnessLogin.get(stale_id).payload)["claudeAiOauth"]["accessToken"] == "new"
-    assert dict(HarnessLogin.get(other_id).payload)["claudeAiOauth"]["accessToken"] == "keep"
+    assert dict(HarnessConnection.get(stale_id).payload)["claudeAiOauth"]["accessToken"] == "new"
+    assert dict(HarnessConnection.get(other_id).payload)["claudeAiOauth"]["accessToken"] == "keep"
 
 
 async def test_invalid_grant_drops_only_the_addressed_row(monkeypatch, db_session):
@@ -287,10 +287,10 @@ async def test_invalid_grant_drops_only_the_addressed_row(monkeypatch, db_sessio
     default_id, other_id = default.id, other.id
     _mock_post(monkeypatch, _resp(400, {"error": "invalid_grant"}))
     await ClaudeHarness.rotate_token(other_id, now=_NOW)
-    assert HarnessLogin.get(other_id) is None
+    assert HarnessConnection.get(other_id) is None
     # The default login is untouched — and an auto-disconnect elsewhere never
     # promoted anything.
-    assert HarnessLogin.get_default("claude").id == default_id
+    assert HarnessConnection.get_default("claude").id == default_id
 
 
 async def test_concurrent_rotations_produce_one_grant(monkeypatch, db_session):
@@ -307,7 +307,7 @@ async def test_concurrent_rotations_produce_one_grant(monkeypatch, db_session):
     assert {first.action, second.action} == {"refreshed", "locked"}
     # Sessions are task-scoped: the winner ran (and committed) inside its own
     # gather task, so read past this task's identity map for what persisted.
-    assert dict(HarnessLogin.reload(login_id).payload)["claudeAiOauth"]["refreshToken"] == "R1"
+    assert dict(HarnessConnection.reload(login_id).payload)["claudeAiOauth"]["refreshToken"] == "R1"
 
 
 async def test_rotation_lock_is_released_after_refresh(monkeypatch, db_session):
@@ -324,13 +324,13 @@ async def test_rotation_lock_is_released_after_refresh(monkeypatch, db_session):
 def test_disconnect_removes_only_the_default_login_without_promotion(db_session):
     default = _seed_claude(provider_email="a@example.com")
     other = _seed_claude(provider_email="b@example.com")
-    assert HarnessLogin.get_default("claude").id == default.id
+    assert HarnessConnection.get_default("claude").id == default.id
 
     ClaudeHarness.disconnect()
 
-    assert HarnessLogin.get(default.id) is None
-    assert HarnessLogin.get(other.id) is not None
-    assert HarnessLogin.get_default("claude") is None  # no silent promotion
+    assert HarnessConnection.get(default.id) is None
+    assert HarnessConnection.get(other.id) is not None
+    assert HarnessConnection.get_default("claude") is None  # no silent promotion
     with pytest.raises(HarnessNotConnectedError):
         ClaudeHarness.get_credentials()
 
@@ -339,11 +339,11 @@ def test_reconnect_after_default_gone_becomes_default(db_session):
     default = _seed_claude(provider_email="a@example.com")
     _seed_claude(provider_email="b@example.com")
     ClaudeHarness.disconnect()
-    assert HarnessLogin.get_default("claude") is None
+    assert HarnessConnection.get_default("claude") is None
 
     # An explicit reconnect of the surviving login is the sanctioned promotion.
     row = _seed_claude(provider_email="b@example.com")
-    assert HarnessLogin.get_default("claude").id == row.id
+    assert HarnessConnection.get_default("claude").id == row.id
     assert row.id != default.id
 
 
@@ -357,8 +357,8 @@ def test_connect_scopes_rows_by_harness_and_account(db_session):
     assert other.account_id != claude_row.account_id
     assert Account.get_for_email("a@example.com").id == claude_row.account_id
     # The first login per harness stays the default.
-    assert HarnessLogin.get_default("claude").id == claude_row.id
-    assert HarnessLogin.get_default("codex").id == codex_row.id
+    assert HarnessConnection.get_default("claude").id == claude_row.id
+    assert HarnessConnection.get_default("codex").id == codex_row.id
 
 
 def test_reconnect_updates_the_existing_login_in_place(db_session):

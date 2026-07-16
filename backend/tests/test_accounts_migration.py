@@ -158,14 +158,14 @@ def test_orm_reads_migrated_rows_under_the_model_aad(engine, monkeypatch):
 
     from druks.database import configure_session, db_session, get_session
     from druks.harnesses.claude import ClaudeHarness
-    from druks.harnesses.models import HarnessLogin
+    from druks.harnesses.models import HarnessConnection
 
     configure_session(engine)
     session = get_session(engine)
     db_session.registry.set(session)
     try:
         assert ClaudeHarness.get_credentials() == CLAUDE_PAYLOAD
-        codex_row = HarnessLogin.get_default("codex")
+        codex_row = HarnessConnection.get_default("codex")
         assert dict(codex_row.payload) == CODEX_PAYLOAD
         assert codex_row.provider_email is None
     finally:

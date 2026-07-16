@@ -153,7 +153,7 @@ def rt():
     # An agent run checks the resolved harness is connected before any VM work;
     # AgentFlow's decider resolves to claude, so connect it for the module.
     from druks.accounts.models import Account
-    from druks.harnesses.models import HarnessLogin
+    from druks.harnesses.models import HarnessConnection
 
     session = get_session(engine)
     try:
@@ -161,7 +161,7 @@ def rt():
         session.add(account)
         session.flush()
         session.add(
-            HarnessLogin(
+            HarnessConnection(
                 harness="claude",
                 account_id=account.id,
                 provider_email=account.email,

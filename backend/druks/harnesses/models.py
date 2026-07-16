@@ -11,12 +11,12 @@ from druks.models import Base
 from druks.secrets.fields import EncryptedJsonField
 
 
-class HarnessLogin(Base, Uuid7Pk):
+class HarnessConnection(Base, Uuid7Pk):
     __tablename__ = "harness_logins"
     __table_args__ = (
         UniqueConstraint("harness", "account_id"),
-        # One designated default login per harness — the row execution and the
-        # settings card resolve while runs aren't account-aware.
+        # One designated default connection per harness — the row execution and
+        # the settings card resolve while runs aren't account-aware.
         Index(
             "harness_logins_default_idx",
             "harness",
@@ -29,9 +29,10 @@ class HarnessLogin(Base, Uuid7Pk):
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id", ondelete="RESTRICT"))
     # The email the provider reported at the token exchange. Cached because
     # Claude states it once and its stored payload carries no identity at all —
-    # without this the login is anonymous forever. A connect-time snapshot, not
-    # an identifier: it goes stale if the account is renamed upstream, and
-    # refreshes on the next connect. Null on a row migrated without one.
+    # without this the connection is anonymous forever. A connect-time
+    # snapshot, not an identifier: it goes stale if the account is renamed
+    # upstream, and refreshes on the next connect. Null on a row migrated
+    # without one.
     provider_email: Mapped[str | None]
     kind: Mapped[str] = mapped_column(String, default="subscription")
     payload = EncryptedJsonField()
@@ -44,25 +45,25 @@ class HarnessLogin(Base, Uuid7Pk):
         return canonical_email(value) if value else None
 
     @classmethod
-    def get(cls, login_id: str) -> "HarnessLogin | None":
+    def get(cls, login_id: str) -> "HarnessConnection | None":
         return db_session().get(cls, login_id)
 
     @classmethod
-    def get_default(cls, harness: str) -> "HarnessLogin | None":
+    def get_default(cls, harness: str) -> "HarnessConnection | None":
         return db_session().scalar(select(cls).where(cls.harness == harness, cls.is_default))
 
     @classmethod
-    def get_for_account(cls, harness: str, account_id: str) -> "HarnessLogin | None":
+    def get_for_account(cls, harness: str, account_id: str) -> "HarnessConnection | None":
         return db_session().scalar(
             select(cls).where(cls.harness == harness, cls.account_id == account_id)
         )
 
     @classmethod
-    def list_all(cls) -> list["HarnessLogin"]:
+    def list_all(cls) -> list["HarnessConnection"]:
         return list(db_session().scalars(select(cls).order_by(cls.harness, cls.id)))
 
     @classmethod
-    def reload(cls, login_id: str) -> "HarnessLogin | None":
+    def reload(cls, login_id: str) -> "HarnessConnection | None":
         """Fresh-from-DB read of one row, past the identity map's cached state
         — the post-lock re-read that keeps a refresher from re-presenting a
         refresh token a concurrent winner already advanced."""
@@ -78,11 +79,11 @@ class HarnessLogin(Base, Uuid7Pk):
         payload: dict,
         expires_at: datetime | None,
         provider_email: str,
-    ) -> "HarnessLogin":
-        """Upsert the account's login for this harness, creating the account
-        from the provider's email when it's new. A login connected while the
-        harness has no default becomes the default; promotion only ever
-        happens through a connect, never a disconnect."""
+    ) -> "HarnessConnection":
+        """Upsert the account's connection for this harness, creating the
+        account from the provider's email when it's new. A connection made
+        while the harness has no default becomes the default; promotion only
+        ever happens through a connect, never a disconnect."""
         account = Account.get_or_create(provider_email)
         session = db_session()
         row = cls.get_for_account(harness, account.id)

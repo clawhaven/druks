@@ -10,7 +10,7 @@ from druks.harnesses import base as hbase
 from druks.harnesses.claude import ClaudeHarness
 from druks.harnesses.codex import CodexHarness
 from druks.harnesses.exceptions import LoginError
-from druks.harnesses.models import HarnessLogin
+from druks.harnesses.models import HarnessConnection
 
 
 @pytest.fixture(autouse=True)
@@ -73,7 +73,7 @@ async def test_claude_login_complete_creates_account_and_login(monkeypatch, db_s
     calls = _mock_post(monkeypatch, _resp(200, _CLAUDE_GRANT))
     await ClaudeHarness.login_complete(flow_id=flow_id, pasted="thecode")
 
-    login = HarnessLogin.get_default("claude")
+    login = HarnessConnection.get_default("claude")
     assert login is not None
     block = dict(login.payload)["claudeAiOauth"]
     assert block["accessToken"] == "AT"
@@ -106,10 +106,10 @@ async def test_concurrent_login_flows_do_not_clobber_each_other(monkeypatch, db_
     _mock_post(monkeypatch, _resp(200, second_grant))
     await ClaudeHarness.login_complete(flow_id=second_flow, pasted="code-2")
 
-    connected = {login.provider_email for login in HarnessLogin.list_all()}
+    connected = {login.provider_email for login in HarnessConnection.list_all()}
     assert connected == {"me@example.com", "other@example.com"}
     # The first login connected stays the harness default.
-    assert HarnessLogin.get_default("claude").provider_email == "me@example.com"
+    assert HarnessConnection.get_default("claude").provider_email == "me@example.com"
 
 
 async def test_login_complete_without_provider_email_raises(monkeypatch, db_session):
@@ -118,7 +118,7 @@ async def test_login_complete_without_provider_email_raises(monkeypatch, db_sess
     _mock_post(monkeypatch, _resp(200, grant))
     with pytest.raises(LoginError, match="no account email"):
         await ClaudeHarness.login_complete(flow_id=flow_id, pasted="thecode")
-    assert HarnessLogin.list_all() == []
+    assert HarnessConnection.list_all() == []
 
 
 async def test_login_complete_normalizes_provider_email(monkeypatch, db_session):
@@ -126,7 +126,7 @@ async def test_login_complete_normalizes_provider_email(monkeypatch, db_session)
     grant = dict(_CLAUDE_GRANT, account={"email_address": " Me@Example.COM "})
     _mock_post(monkeypatch, _resp(200, grant))
     await ClaudeHarness.login_complete(flow_id=flow_id, pasted="thecode")
-    login = HarnessLogin.get_default("claude")
+    login = HarnessConnection.get_default("claude")
     assert login.provider_email == "me@example.com"
     assert Account.get_for_email("me@example.com") is not None
 
@@ -149,7 +149,7 @@ async def test_codex_login_complete_is_form_encoded_and_reads_jwt(monkeypatch, d
         pasted=f"http://localhost:1455/auth/callback?code=thecode&state={pending['state']}",
     )
 
-    login = HarnessLogin.get_default("codex")
+    login = HarnessConnection.get_default("codex")
     payload = dict(login.payload)
     assert payload["tokens"]["account_id"] == "acc-9"
     assert payload["tokens"]["id_token"] == "ID"
@@ -188,13 +188,13 @@ async def test_login_complete_provider_error_clears_pending(monkeypatch, db_sess
     assert "invalid_grant" in str(error.value)
     # Failure is single-use too — a retry must re-start.
     assert await _pending(flow_id) is None
-    assert HarnessLogin.get_default("claude") is None
+    assert HarnessConnection.get_default("claude") is None
 
 
 def test_disconnect_deletes_the_default_row(db_session):
     from conftest import connect_harness
 
     connect_harness(ClaudeHarness, {"claudeAiOauth": {"accessToken": "x", "refreshToken": "r"}})
-    assert HarnessLogin.get_default("claude") is not None
+    assert HarnessConnection.get_default("claude") is not None
     ClaudeHarness.disconnect()
-    assert HarnessLogin.get_default("claude") is None
+    assert HarnessConnection.get_default("claude") is None

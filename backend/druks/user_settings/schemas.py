@@ -8,7 +8,7 @@ from druks.extensions.settings import field_choices, field_kind
 from druks.schemas import BaseResponse
 
 if TYPE_CHECKING:
-    from druks.harnesses.models import HarnessLogin
+    from druks.harnesses.models import HarnessConnection
     from druks.user_settings.models import HarnessSettings
 
 
@@ -20,7 +20,7 @@ class HarnessResponse(BaseResponse):
     timeout: int
     fast_mode: bool
     allowed_models: list[str]
-    # Connection state, joined in from the harness's default HarnessLogin row —
+    # Connection state, joined in from the harness's default HarnessConnection row —
     # connected=False until someone connects it from the dashboard.
     connected: bool
     kind: str | None
@@ -29,7 +29,7 @@ class HarnessResponse(BaseResponse):
 
     @classmethod
     def from_row(
-        cls, settings: "HarnessSettings", login: "HarnessLogin | None"
+        cls, settings: "HarnessSettings", login: "HarnessConnection | None"
     ) -> "HarnessResponse":
         return cls(
             name=settings.name,

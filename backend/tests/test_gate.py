@@ -75,7 +75,7 @@ class _TrackingGate:
 async def test_refresh_closes_gate_when_a_rotation_is_due(monkeypatch):
     hold = _TrackingGate()
     monkeypatch.setattr(harness_workflows, "get_harnesses", lambda: (_FakeHarness,))
-    monkeypatch.setattr(harness_workflows, "HarnessLogin", _FakeLogins)
+    monkeypatch.setattr(harness_workflows, "HarnessConnection", _FakeLogins)
     monkeypatch.setattr(harness_workflows.gate, "hold", hold)
     _FakeHarness.refresh_due = True
 
@@ -87,7 +87,7 @@ async def test_refresh_closes_gate_when_a_rotation_is_due(monkeypatch):
 async def test_refresh_leaves_gate_open_on_a_no_op_tick(monkeypatch):
     hold = _TrackingGate()
     monkeypatch.setattr(harness_workflows, "get_harnesses", lambda: (_FakeHarness,))
-    monkeypatch.setattr(harness_workflows, "HarnessLogin", _FakeLogins)
+    monkeypatch.setattr(harness_workflows, "HarnessConnection", _FakeLogins)
     monkeypatch.setattr(harness_workflows.gate, "hold", hold)
     _FakeHarness.refresh_due = False
 
