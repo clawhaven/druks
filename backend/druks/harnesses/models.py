@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import ForeignKey, Index, String, UniqueConstraint, select, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 from sqlalchemy.orm.attributes import flag_modified
 
 from druks.accounts.models import Account
@@ -15,15 +15,8 @@ class HarnessLogin(Base, Uuid7Pk):
     __tablename__ = "harness_logins"
     __table_args__ = (
         UniqueConstraint("harness", "account_id"),
-        Index(
-            "harness_logins_provider_email_idx",
-            "harness",
-            "provider_email",
-            unique=True,
-            postgresql_where=text("provider_email IS NOT NULL"),
-        ),
-        # One designated default seat per harness — the row execution and the
-        # settings card resolve while runs aren't seat-aware.
+        # One designated default login per harness — the row execution and the
+        # settings card resolve while runs aren't account-aware.
         Index(
             "harness_logins_default_idx",
             "harness",
@@ -34,14 +27,23 @@ class HarnessLogin(Base, Uuid7Pk):
 
     harness: Mapped[str]
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id", ondelete="RESTRICT"))
-    # The identity the provider reported for this seat, normalized lowercase.
-    # Null on a row migrated without one — filled in on reconnect.
+    # The email the provider reported at the token exchange. Cached because
+    # Claude states it once and its stored payload carries no identity at all —
+    # without this the login is anonymous forever. A connect-time snapshot, not
+    # an identifier: it goes stale if the account is renamed upstream, and
+    # refreshes on the next connect. Null on a row migrated without one.
     provider_email: Mapped[str | None]
     kind: Mapped[str] = mapped_column(String, default="subscription")
     payload = EncryptedJsonField()
     expires_at: Mapped[datetime | None]
     is_default: Mapped[bool] = mapped_column(default=False)
     updated_at: Mapped[datetime] = mapped_column(default=Base.utc_now, onupdate=Base.utc_now)
+
+    @validates("provider_email")
+    def _canonical_provider_email(self, _key: str, value: str | None) -> str | None:
+        if not value:
+            return None
+        return value.strip().lower()
 
     @classmethod
     def get(cls, login_id: str) -> "HarnessLogin | None":
@@ -55,12 +57,6 @@ class HarnessLogin(Base, Uuid7Pk):
     def get_for_account(cls, harness: str, account_id: str) -> "HarnessLogin | None":
         return db_session().scalar(
             select(cls).where(cls.harness == harness, cls.account_id == account_id)
-        )
-
-    @classmethod
-    def get_by_provider_email(cls, harness: str, provider_email: str) -> "HarnessLogin | None":
-        return db_session().scalar(
-            select(cls).where(cls.harness == harness, cls.provider_email == provider_email)
         )
 
     @classmethod
@@ -85,22 +81,18 @@ class HarnessLogin(Base, Uuid7Pk):
         expires_at: datetime | None,
         provider_email: str,
     ) -> "HarnessLogin":
-        """Upsert the seat a finished connect flow authenticated: the row
-        already carrying this provider email, else the account's row for this
-        harness — creating the account from the provider email when it's new.
-        A seat connected while the harness has no default becomes the default;
-        promotion only ever happens through a connect, never a disconnect."""
-        email = Account.normalize_email(provider_email)
+        """Upsert the account's login for this harness, creating the account
+        from the provider's email when it's new. A login connected while the
+        harness has no default becomes the default; promotion only ever
+        happens through a connect, never a disconnect."""
+        account = Account.get_or_create(provider_email)
         session = db_session()
-        row = cls.get_by_provider_email(harness, email)
+        row = cls.get_for_account(harness, account.id)
         if not row:
-            account = Account.get_or_create(email)
-            row = cls.get_for_account(harness, account.id)
-            if not row:
-                row = cls(harness=harness, account_id=account.id)
-                session.add(row)
+            row = cls(harness=harness, account_id=account.id)
+            session.add(row)
         row.payload = payload
-        row.provider_email = email
+        row.provider_email = provider_email
         row.expires_at = expires_at
         if not cls.get_default(harness):
             row.is_default = True

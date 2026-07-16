@@ -38,7 +38,7 @@ def upgrade() -> None:
 
     email = ""
     if legacy:
-        # Fail before any mutation: existing seats are re-keyed under one
+        # Fail before any mutation: existing logins are re-keyed under one
         # account, and only the operator knows which identity that is.
         email = os.environ.get("DRUKS_DASHBOARD_EMAIL", "").strip().lower()
         if not email:
@@ -123,13 +123,6 @@ def upgrade() -> None:
     )
     op.create_unique_constraint(
         "harness_logins_harness_account_id_key", "harness_logins", ["harness", "account_id"]
-    )
-    op.create_index(
-        "harness_logins_provider_email_idx",
-        "harness_logins",
-        ["harness", "provider_email"],
-        unique=True,
-        postgresql_where=sa.text("provider_email IS NOT NULL"),
     )
     op.create_index(
         "harness_logins_default_idx",

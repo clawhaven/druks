@@ -21,7 +21,7 @@ class HarnessResponse(BaseResponse):
     fast_mode: bool
     allowed_models: list[str]
     # Connection state, joined in from the harness's default HarnessLogin row —
-    # connected=False until someone connects a seat from the dashboard.
+    # connected=False until someone connects it from the dashboard.
     connected: bool
     kind: str | None
     account: str | None

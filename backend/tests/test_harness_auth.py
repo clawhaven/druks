@@ -288,7 +288,7 @@ async def test_invalid_grant_drops_only_the_addressed_row(monkeypatch, db_sessio
     _mock_post(monkeypatch, _resp(400, {"error": "invalid_grant"}))
     await ClaudeHarness.rotate_token(other_id, now=_NOW)
     assert HarnessLogin.get(other_id) is None
-    # The default seat is untouched — and an auto-disconnect elsewhere never
+    # The default login is untouched — and an auto-disconnect elsewhere never
     # promoted anything.
     assert HarnessLogin.get_default("claude").id == default_id
 
@@ -321,7 +321,7 @@ async def test_rotation_lock_is_released_after_refresh(monkeypatch, db_session):
     assert await druks.redis.get_client().get(f"druks:harness:refresh:{login.id}") is None
 
 
-def test_disconnect_removes_only_the_default_seat_without_promotion(db_session):
+def test_disconnect_removes_only_the_default_login_without_promotion(db_session):
     default = _seed_claude(provider_email="a@example.com")
     other = _seed_claude(provider_email="b@example.com")
     assert HarnessLogin.get_default("claude").id == default.id
@@ -341,7 +341,7 @@ def test_reconnect_after_default_gone_becomes_default(db_session):
     ClaudeHarness.disconnect()
     assert HarnessLogin.get_default("claude") is None
 
-    # An explicit reconnect of the surviving seat is the sanctioned promotion.
+    # An explicit reconnect of the surviving login is the sanctioned promotion.
     row = _seed_claude(provider_email="b@example.com")
     assert HarnessLogin.get_default("claude").id == row.id
     assert row.id != default.id
@@ -355,16 +355,16 @@ def test_connect_scopes_rows_by_harness_and_account(db_session):
     assert len({claude_row.id, codex_row.id, other.id}) == 3
     assert claude_row.account_id == codex_row.account_id  # same person, one account
     assert other.account_id != claude_row.account_id
-    assert Account.get_by_email("a@example.com").id == claude_row.account_id
-    # First seat per harness stays the default.
+    assert Account.get_for_email("a@example.com").id == claude_row.account_id
+    # The first login per harness stays the default.
     assert HarnessLogin.get_default("claude").id == claude_row.id
     assert HarnessLogin.get_default("codex").id == codex_row.id
 
 
-def test_reconnect_updates_the_existing_seat_in_place(db_session):
+def test_reconnect_updates_the_existing_login_in_place(db_session):
     row = _seed_claude(access="old", provider_email="a@example.com")
     again = _seed_claude(access="new", provider_email="A@Example.com ")
-    assert again.id == row.id  # normalized email finds the same seat
+    assert again.id == row.id  # normalized email finds the same login
     assert dict(again.payload)["claudeAiOauth"]["accessToken"] == "new"
     assert again.provider_email == "a@example.com"
 

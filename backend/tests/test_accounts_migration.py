@@ -12,7 +12,7 @@ from druks.secrets.utils import decrypt
 from sqlalchemy import create_engine, text
 
 # The re-key migration is the one shot at existing credentials: it must fail
-# closed without the operator identity, attach every legacy seat when given
+# closed without the operator identity, attach every legacy login when given
 # one, and produce ciphertexts the ORM can read under the final AAD. That only
 # proves out against a real Postgres walked from the previous head — so this
 # module owns its database and drives Alembic directly.
@@ -134,7 +134,7 @@ def test_legacy_rows_are_rekeyed_under_one_account(engine, monkeypatch):
     assert [row["harness"] for row in logins] == ["claude", "codex"]
     assert len({row["id"] for row in logins}) == 2
     for row in logins:
-        # Every legacy seat attaches to the one account and stays its
+        # Every legacy login attaches to the one account and stays its
         # harness's default, whatever its provider email was.
         assert row["account_id"] == accounts[0]["id"]
         assert row["is_default"] is True

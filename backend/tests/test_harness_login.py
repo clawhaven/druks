@@ -65,11 +65,10 @@ async def test_claude_login_start_builds_url_and_stashes_pending(db_session):
     assert "client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e" in url
 
     pending = await _pending(flow_id)
-    assert pending["harness"] == "claude"
     assert pending["state"] == pending["verifier"]  # claude echoes the verifier as state
 
 
-async def test_claude_login_complete_creates_account_and_seat(monkeypatch, db_session):
+async def test_claude_login_complete_creates_account_and_login(monkeypatch, db_session):
     _, flow_id = await ClaudeHarness.login_start()
     calls = _mock_post(monkeypatch, _resp(200, _CLAUDE_GRANT))
     await ClaudeHarness.login_complete(flow_id=flow_id, pasted="thecode")
@@ -82,7 +81,7 @@ async def test_claude_login_complete_creates_account_and_seat(monkeypatch, db_se
     assert block["scopes"] == ["user:profile", "user:inference"]
     assert login.provider_email == "me@example.com"
     assert login.is_default is True
-    assert Account.get_by_email("me@example.com").id == login.account_id
+    assert Account.get_for_email("me@example.com").id == login.account_id
     # Claude exchanges JSON with the code + state echoed in the body.
     assert calls[0]["json"]["code"] == "thecode"
     assert "state" in calls[0]["json"]
@@ -107,18 +106,10 @@ async def test_concurrent_login_flows_do_not_clobber_each_other(monkeypatch, db_
     _mock_post(monkeypatch, _resp(200, second_grant))
     await ClaudeHarness.login_complete(flow_id=second_flow, pasted="code-2")
 
-    seats = {login.provider_email for login in HarnessLogin.list_all()}
-    assert seats == {"me@example.com", "other@example.com"}
-    # First seat connected stays the harness default.
+    connected = {login.provider_email for login in HarnessLogin.list_all()}
+    assert connected == {"me@example.com", "other@example.com"}
+    # The first login connected stays the harness default.
     assert HarnessLogin.get_default("claude").provider_email == "me@example.com"
-
-
-async def test_login_complete_rejects_a_foreign_harness_flow(db_session):
-    _, flow_id = await ClaudeHarness.login_start()
-    with pytest.raises(LoginError, match="different harness"):
-        await CodexHarness.login_complete(flow_id=flow_id, pasted="code")
-    # The pending state is spent either way — a retry re-starts.
-    assert await _pending(flow_id) is None
 
 
 async def test_login_complete_without_provider_email_raises(monkeypatch, db_session):
@@ -137,7 +128,7 @@ async def test_login_complete_normalizes_provider_email(monkeypatch, db_session)
     await ClaudeHarness.login_complete(flow_id=flow_id, pasted="thecode")
     login = HarnessLogin.get_default("claude")
     assert login.provider_email == "me@example.com"
-    assert Account.get_by_email("me@example.com") is not None
+    assert Account.get_for_email("me@example.com") is not None
 
 
 async def test_codex_login_complete_is_form_encoded_and_reads_jwt(monkeypatch, db_session):

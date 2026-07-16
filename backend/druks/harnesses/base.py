@@ -186,9 +186,10 @@ class Harness(ABC):
 
     @classmethod
     def get_credentials(cls) -> dict:
-        """The default seat's credential-file dict — the row execution resolves
-        while runs aren't seat-aware. Raises :class:`HarnessNotConnectedError`,
-        with the connect-in-Settings fix, when no seat is designated."""
+        """The default login's credential-file dict — the row execution
+        resolves while runs aren't account-aware. Raises
+        :class:`HarnessNotConnectedError`, with the connect-in-Settings fix,
+        when no login is designated."""
         row = HarnessLogin.get_default(cls.name)
         data = dict(row.payload) if row else None
         if not data:
@@ -215,7 +216,7 @@ class Harness(ABC):
         challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
         url, state = cls.authorize_url(verifier=verifier, challenge=challenge)
         flow_id = secrets.token_urlsafe(24)
-        pending = json.dumps({"harness": cls.name, "verifier": verifier, "state": state})
+        pending = json.dumps({"verifier": verifier, "state": state})
         await get_client().set(_login_pending_key(flow_id), pending, ex=_LOGIN_PENDING_TTL_SECONDS)
         return url, flow_id
 
@@ -223,15 +224,13 @@ class Harness(ABC):
     async def login_complete(cls, *, flow_id: str, pasted: str) -> None:
         """Finish a connect flow: pop the flow's single-use pending state,
         parse the paste (bare code or full redirect URL), exchange it, and
-        upsert the seat under the provider-reported account. Raises
+        upsert the login under the provider-reported account. Raises
         :class:`LoginError` with a user-facing message on any failure — the
         pending state is gone either way, so a retry re-starts cleanly."""
         pending = await get_client().getdel(_login_pending_key(flow_id))  # single-use
         if not pending:
             raise LoginError("This sign-in expired — start it again.")
         expected = json.loads(pending)
-        if expected["harness"] != cls.name:
-            raise LoginError("That sign-in belongs to a different harness — start it again.")
 
         code, pasted_state = _parse_pasted(pasted)
         if not code:
@@ -255,8 +254,8 @@ class Harness(ABC):
 
     @classmethod
     def disconnect(cls) -> None:
-        """Disconnect the default seat — the single connection card's target.
-        Never promotes another seat."""
+        """Disconnect the default login — the single connection card's target.
+        Never promotes another one."""
         row = HarnessLogin.get_default(cls.name)
         if row:
             row.delete()
@@ -349,7 +348,7 @@ class Harness(ABC):
                 if exc.tag == "invalid_grant":
                     # The provider revoked this row's refresh lineage;
                     # presenting it again can never succeed. Drop only this
-                    # credential so the seat reads as disconnected — the UI
+                    # credential so the login reads as disconnected — the UI
                     # shows Reconnect and the next tick has no row to hammer.
                     row.delete()
                     db_session().commit()

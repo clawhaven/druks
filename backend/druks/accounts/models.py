@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import String, select
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from druks.core.models import Uuid7Pk
 from druks.database import db_session
@@ -15,20 +15,22 @@ class Account(Base, Uuid7Pk):
     created_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=Base.utc_now, onupdate=Base.utc_now)
 
-    @staticmethod
-    def normalize_email(value: str) -> str:
+    @validates("email")
+    def _canonical_email(self, _key: str, value: str) -> str:
+        # Canonical on write, so the stored value is the one every reader
+        # compares, displays, and keys on — no second shape anywhere.
         return value.strip().lower()
 
     @classmethod
-    def get_by_email(cls, email: str) -> "Account | None":
-        return db_session().scalar(select(cls).where(cls.email == cls.normalize_email(email)))
+    def get_for_email(cls, email: str) -> "Account | None":
+        return db_session().scalar(select(cls).where(cls.email == email.strip().lower()))
 
     @classmethod
     def get_or_create(cls, email: str) -> "Account":
-        account = cls.get_by_email(email)
+        account = cls.get_for_email(email)
         if account:
             return account
-        account = cls(email=cls.normalize_email(email))
+        account = cls(email=email)
         session = db_session()
         session.add(account)
         session.flush()
