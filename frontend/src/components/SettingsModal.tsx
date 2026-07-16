@@ -3,10 +3,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api } from '../api/client'
 import { ExtensionGlyph } from './ExtensionGlyph'
+import { LoginSteps, useHarnessLogin } from './HarnessLogin'
 import {
   type Harness,
   type ExtensionSettings,
-  type LoginChallenge,
   type McpRegistryCandidate,
   type McpServer,
   type SkillCollection,
@@ -750,49 +750,27 @@ function HarnessesPane({
   )
 }
 
-// One harness's subscription connection: status chip + the connect (open
-// authorize URL, paste the code) / disconnect flow. Connection state is its own
-// axis — persisted immediately, not through the modal's Save — so this manages
-// its own busy/error and refetches the harnesses query on change.
-function HarnessConnect({ harness }: { harness: Harness }) {
+// Connection state persists immediately, outside the modal's Save, so this
+// manages its own busy/error and refetches the harnesses query on change.
+export function HarnessConnect({ harness }: { harness: Harness }) {
   const queryClient = useQueryClient()
-  const [challenge, setChallenge] = useState<LoginChallenge | null>(null)
-  const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['harnesses'] })
-
-  async function run(action: () => Promise<unknown>) {
-    setBusy(true)
-    setError(null)
-    try {
-      await action()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const start = () =>
-    run(async () => setChallenge(await api.startHarnessLogin(harness.name)))
-
-  const finish = () =>
-    run(async () => {
-      if (!challenge) return
-      await api.completeHarnessLogin(harness.name, code.trim(), challenge.flowId)
-      setChallenge(null)
-      setCode('')
-      await refresh()
-    })
+  const flow = useHarnessLogin(harness.name, async () => {
+    await refresh()
+  })
 
   const disconnect = () => {
     if (!window.confirm(`Disconnect ${harness.name}? You'll need to sign in again to run it.`)) return
-    void run(async () => {
-      await api.disconnectHarness(harness.name)
-      await refresh()
-    })
+    setBusy(true)
+    setError(null)
+    void api
+      .disconnectHarness(harness.name)
+      .then(refresh)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false))
   }
 
   return (
@@ -810,45 +788,19 @@ function HarnessConnect({ harness }: { harness: Harness }) {
         )}
         <span className="hr-conn-actions">
           {harness.connected && (
-            <button className="hr-conn-btn hr-conn-ghost" onClick={disconnect} disabled={busy}>
+            <button className="hr-conn-btn hr-conn-ghost" onClick={disconnect} disabled={busy || flow.busy}>
               Disconnect
             </button>
           )}
-          {!challenge && (
-            <button className="hr-conn-btn" onClick={() => void start()} disabled={busy}>
+          {!flow.challenge && (
+            <button className="hr-conn-btn" onClick={() => void flow.start()} disabled={busy || flow.busy}>
               {harness.connected ? 'Reconnect' : 'Connect'}
             </button>
           )}
         </span>
       </div>
-      {challenge && (
-        <div className="hr-conn-flow">
-          <div className="hr-conn-step">
-            <span className="hr-conn-num">1</span>
-            <a href={challenge.authorizeUrl} target="_blank" rel="noreferrer">
-              Open the sign-in page
-            </a>
-            , approve, then copy the code it shows (or the redirect URL).
-          </div>
-          <div className="hr-conn-step hr-conn-paste">
-            <span className="hr-conn-num">2</span>
-            <input
-              className="hr-conn-input"
-              placeholder="Paste the code or redirect URL"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              disabled={busy}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && code.trim()) void finish()
-              }}
-            />
-            <button className="hr-conn-btn" onClick={() => void finish()} disabled={busy || !code.trim()}>
-              Finish
-            </button>
-          </div>
-        </div>
-      )}
-      {error && <div className="hr-conn-error">{error}</div>}
+      <LoginSteps flow={flow} />
+      {(error ?? flow.error) && <div className="hr-conn-error">{error ?? flow.error}</div>}
     </div>
   )
 }

@@ -22,6 +22,7 @@ from druks.usage.models import UsageScrape
 from .datastructures import (
     AgentInvocation,
     CodexToken,
+    CompletedLogin,
     HarnessRunResult,
     OAuthToken,
     ParsedUsage,
@@ -186,11 +187,11 @@ class Harness(ABC):
 
     @classmethod
     def get_credentials(cls) -> dict:
-        """The default login's credential-file dict — the row execution
-        resolves while runs aren't account-aware. Raises
-        :class:`HarnessNotConnectedError`, with the connect-in-Settings fix,
-        when no login is designated."""
-        row = HarnessConnection.get_default(cls.name)
+        """The fallback account's credential-file dict for this harness — the
+        account actor-less runs run as while runs aren't account-attributed.
+        Raises :class:`HarnessNotConnectedError` when that account has no
+        login here."""
+        row = HarnessConnection.get_for_account(cls.name, fallback=True)
         data = dict(row.payload) if row else None
         if not data:
             raise HarnessNotConnectedError(
@@ -207,26 +208,28 @@ class Harness(ABC):
         return json.dumps(cls.get_credentials())
 
     @classmethod
-    async def login_start(cls) -> tuple[str, str]:
-        """Begin a connect flow: mint a PKCE verifier + challenge, build the
-        provider's authorize URL, and stash the pending state in Redis under an
-        opaque flow id (single-use, short TTL) so concurrent connects never
-        overwrite each other. Returns (authorize URL, flow id)."""
+    async def login_start(cls, *, account_id: str | None = None) -> tuple[str, str]:
+        """Mint PKCE state under a single-use flow id; return (authorize URL,
+        flow id). A reconnect under a live session binds ``account_id``."""
         verifier = _b64url(secrets.token_bytes(64))
         challenge = _b64url(hashlib.sha256(verifier.encode()).digest())
         url, state = cls.authorize_url(verifier=verifier, challenge=challenge)
         flow_id = secrets.token_urlsafe(24)
-        pending = json.dumps({"verifier": verifier, "state": state})
+        pending = json.dumps(
+            {
+                "verifier": verifier,
+                "state": state,
+                "account_id": account_id,
+            }
+        )
         await get_client().set(_login_pending_key(flow_id), pending, ex=_LOGIN_PENDING_TTL_SECONDS)
         return url, flow_id
 
     @classmethod
-    async def login_complete(cls, *, flow_id: str, pasted: str) -> None:
-        """Finish a connect flow: pop the flow's single-use pending state,
-        parse the paste (bare code or full redirect URL), exchange it, and
-        upsert the login under the provider-reported account. Raises
-        :class:`LoginError` with a user-facing message on any failure — the
-        pending state is gone either way, so a retry re-starts cleanly."""
+    async def login_complete(cls, *, flow_id: str, pasted: str) -> CompletedLogin:
+        """Pop the flow's single-use state, parse the paste, exchange the code.
+        Raises :class:`LoginError` on failure; the state is gone either way,
+        so a retry re-starts cleanly."""
         pending = await get_client().getdel(_login_pending_key(flow_id))  # single-use
         if not pending:
             raise LoginError("This sign-in expired — start it again.")
@@ -245,20 +248,12 @@ class Harness(ABC):
                 "that has one and try again."
             )
         _, expires_at = cls._refresh_state(payload)
-        HarnessConnection.connect(
-            harness=cls.name,
+        return CompletedLogin(
             payload=payload,
-            expires_at=expires_at,
             provider_email=provider_email,
+            expires_at=expires_at,
+            account_id=expected["account_id"],
         )
-
-    @classmethod
-    def disconnect(cls) -> None:
-        """Disconnect the default login — the single connection card's target.
-        Never promotes another one."""
-        row = HarnessConnection.get_default(cls.name)
-        if row:
-            row.delete()
 
     @classmethod
     @abstractmethod
@@ -331,9 +326,7 @@ class Harness(ABC):
             # advanced this lineage (or deleted the row) after our first read.
             row = HarnessConnection.reload(login_id)
             if not row:
-                return RotationResult(
-                    cls.name, "failed", error="no_credentials", login_id=login_id
-                )
+                return RotationResult(cls.name, "failed", error="no_credentials", login_id=login_id)
             data = dict(row.payload)
             refresh_token, expires_at = cls._refresh_state(data)
             if not refresh_token:
@@ -353,8 +346,7 @@ class Harness(ABC):
                     row.delete()
                     db_session().commit()
                     logger.warning(
-                        "%s login %s auto-disconnected after invalid_grant; "
-                        "reconnect to restore",
+                        "%s login %s auto-disconnected after invalid_grant; reconnect to restore",
                         cls.name,
                         row.id,
                     )

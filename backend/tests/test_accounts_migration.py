@@ -130,16 +130,18 @@ def test_legacy_rows_are_rekeyed_under_one_account(engine, monkeypatch):
 
     logins = _rows(
         engine,
-        "SELECT id, harness, account_id, provider_email, is_default, payload "
+        "SELECT id, harness, account_id, provider_email, payload "
         "FROM harness_logins ORDER BY harness",
     )
     assert [row["harness"] for row in logins] == ["claude", "codex"]
     assert len({row["id"] for row in logins}) == 2
     for row in logins:
-        # Every legacy login attaches to the one account and stays its
-        # harness's default, whatever its provider email was.
+        # Every legacy login attaches to the one account, whatever its
+        # provider email was.
         assert row["account_id"] == accounts[0]["id"]
-        assert row["is_default"] is True
+    # That account is the execution fallback.
+    fallback = _rows(engine, "SELECT fallback_account_id FROM user_settings")
+    assert fallback[0]["fallback_account_id"] == accounts[0]["id"]
     assert logins[0]["provider_email"] == "Legacy@Example.COM"  # stripped, original case
     assert logins[1]["provider_email"] is None
 
@@ -158,6 +160,7 @@ def test_orm_reads_migrated_rows_under_the_model_aad(engine, monkeypatch):
     monkeypatch.setenv("DRUKS_DASHBOARD_EMAIL", "op@example.com")
     _upgrade("head")
 
+    from druks.accounts.models import Account
     from druks.database import configure_session, db_session, get_session
     from druks.harnesses.claude import ClaudeHarness
     from druks.harnesses.models import HarnessConnection
@@ -167,7 +170,9 @@ def test_orm_reads_migrated_rows_under_the_model_aad(engine, monkeypatch):
     db_session.registry.set(session)
     try:
         assert ClaudeHarness.get_credentials() == CLAUDE_PAYLOAD
-        codex_row = HarnessConnection.get_default("codex")
+        codex_row = HarnessConnection.get_for_account(
+            "codex", Account.get_for_email("op@example.com").id
+        )
         assert dict(codex_row.payload) == CODEX_PAYLOAD
         assert codex_row.provider_email is None
     finally:

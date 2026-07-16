@@ -151,9 +151,12 @@ def rt():
     configure_session(engine)
 
     # An agent run checks the resolved harness is connected before any VM work;
-    # AgentFlow's decider resolves to claude, so connect it for the module.
+    # AgentFlow's decider resolves to claude, so connect it for the module —
+    # and mark the account as the execution fallback, the way the first
+    # login would.
     from druks.accounts.models import Account
     from druks.harnesses.models import HarnessConnection
+    from druks.user_settings.models import UserSettings
 
     session = get_session(engine)
     try:
@@ -166,9 +169,9 @@ def rt():
                 account_id=account.id,
                 provider_email=account.email,
                 payload={"claudeAiOauth": {"accessToken": "t"}},
-                is_default=True,
             )
         )
+        session.merge(UserSettings(id=UserSettings.SINGLETON_ID, fallback_account_id=account.id))
         session.commit()
     finally:
         session.close()

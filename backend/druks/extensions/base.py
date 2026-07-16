@@ -220,12 +220,17 @@ class Extension:
         (``discover``), mount its routers under ``/api/<name>``, and serve its
         shipped frontend (if any) under ``/app/<name>``. The loader calls this once
         per extension at boot."""
+        # Local, matching get_routers: the loader stays importable app-lessly.
+        from fastapi import Depends
+
+        from druks.accounts.dependencies import current_account
+
         modules = cls.discover()
-        # The /api/<name> prefix wraps whatever prefix the author set on a router, so an
-        # extension's own routes can't shadow the platform's or another extension's.
+        # /api/<name> wraps the author's own prefix so extensions can't shadow
+        # the platform or each other; every route sits behind the session gate.
         prefix = f"/api/{cls.name}"
         for router in cls.get_routers(modules):
-            app.include_router(router, prefix=prefix)
+            app.include_router(router, prefix=prefix, dependencies=[Depends(current_account)])
         dist = cls.frontend_dist()
         if dist:
             # /app, not /api: unknown /api/* paths must stay JSON 404s, never fall

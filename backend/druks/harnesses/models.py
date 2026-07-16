@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, String, UniqueConstraint, select, text
+from sqlalchemy import ForeignKey, String, UniqueConstraint, select
 from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm.attributes import flag_modified
@@ -10,21 +10,12 @@ from druks.core.models import Uuid7Pk
 from druks.database import db_session
 from druks.models import Base
 from druks.secrets.fields import EncryptedJsonField
+from druks.user_settings.models import UserSettings
 
 
 class HarnessConnection(Base, Uuid7Pk):
     __tablename__ = "harness_logins"
-    __table_args__ = (
-        UniqueConstraint("harness", "account_id"),
-        # One designated default connection per harness — the row execution and
-        # the settings card resolve while runs aren't account-aware.
-        Index(
-            "harness_logins_default_idx",
-            "harness",
-            unique=True,
-            postgresql_where=text("is_default"),
-        ),
-    )
+    __table_args__ = (UniqueConstraint("harness", "account_id"),)
 
     harness: Mapped[str]
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id", ondelete="RESTRICT"))
@@ -38,7 +29,6 @@ class HarnessConnection(Base, Uuid7Pk):
     kind: Mapped[str] = mapped_column(String, default="subscription")
     payload = EncryptedJsonField()
     expires_at: Mapped[datetime | None]
-    is_default: Mapped[bool] = mapped_column(default=False)
     updated_at: Mapped[datetime] = mapped_column(default=Base.utc_now, onupdate=Base.utc_now)
 
     @classmethod
@@ -46,11 +36,13 @@ class HarnessConnection(Base, Uuid7Pk):
         return db_session().get(cls, login_id)
 
     @classmethod
-    def get_default(cls, harness: str) -> "HarnessConnection | None":
-        return db_session().scalar(select(cls).where(cls.harness == harness, cls.is_default))
-
-    @classmethod
-    def get_for_account(cls, harness: str, account_id: str) -> "HarnessConnection | None":
+    def get_for_account(
+        cls, harness: str, account_id: str | None = None, *, fallback: bool = False
+    ) -> "HarnessConnection | None":
+        """``fallback=True`` resolves the fallback account's connection — what
+        actor-less execution runs as."""
+        if fallback:
+            account_id = UserSettings.get().fallback_account_id
         return db_session().scalar(
             select(cls).where(cls.harness == harness, cls.account_id == account_id)
         )
@@ -73,15 +65,13 @@ class HarnessConnection(Base, Uuid7Pk):
         cls,
         *,
         harness: str,
+        account: Account,
         payload: dict,
         expires_at: datetime | None,
         provider_email: str,
     ) -> "HarnessConnection":
-        """Upsert the account's connection for this harness, creating the
-        account from the provider's email when it's new. A connection made
-        while the harness has no default becomes the default; promotion only
-        ever happens through a connect, never a disconnect."""
-        account = Account.get_or_create(provider_email)
+        """Upsert ``account``'s connection for this harness — update its
+        existing row or create one."""
         session = db_session()
         row = cls.get_for_account(harness, account.id)
         if not row:
@@ -90,8 +80,6 @@ class HarnessConnection(Base, Uuid7Pk):
         row.payload = payload
         row.provider_email = provider_email
         row.expires_at = expires_at
-        if not cls.get_default(harness):
-            row.is_default = True
         session.flush()
         return row
 

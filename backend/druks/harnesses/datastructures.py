@@ -32,6 +32,16 @@ class CodexToken:
 
 
 @dataclass(frozen=True)
+class CompletedLogin:
+    payload: dict
+    provider_email: str
+    expires_at: datetime | None
+    # The session account a reconnect was bound to at start; None on an
+    # initial login.
+    account_id: str | None
+
+
+@dataclass(frozen=True)
 class RotationResult:
     harness: str
     # "refreshed" | "fresh" | "locked" | "no_refresh_token" | "failed"

@@ -43,8 +43,7 @@ First pass writes `~/druks/.env` with random secrets pre-filled,
 creates `~/druks/secrets/`, and exits. It tells you exactly what to do
 next:
 
-- Fill in the blanks at the top of `.env` (`DRUKS_DASHBOARD_EMAIL` and
-  the sandbox provider block).
+- Fill in the blanks at the top of `.env` (the sandbox provider block).
 - Provision the two GitHub Apps: re-run the installer with `--apps`.
   It registers each app via GitHub's manifest flow — it prints a link
   per app, you open it, click Create, then paste the `?code=...` from
@@ -107,8 +106,8 @@ ssh exe.dev share set-public druks
 ```
 
 Public URLs: `https://<host>/_external/{github,linear,jira}/events/`
-(HMAC-gated webhooks) and `https://<host>/` (exe.dev login +
-`DRUKS_DASHBOARD_EMAIL` gate).
+(HMAC-gated webhooks) and `https://<host>/` (exe.dev login at the edge;
+harness login in the app mints the session).
 
 **Elsewhere (e.g. AWS + Teleport)**, the dashboard goes through your
 identity proxy (set `DRUKS_AUTH_HEADER` to the header it injects), but
@@ -162,12 +161,27 @@ database backup and the old image — there is no Alembic downgrade.
 With existing harness connections, the migration requires
 `DRUKS_DASHBOARD_EMAIL` in the migration run's environment and attaches every
 existing seat to one account with that email. A remote install needs no extra
-step — `.env` already holds the value the Caddy gate matches. **Warning:** the
-one-run value must match the provider email you will actually sign in with
+step — `.env` already holds the value the old Caddy gate matched. **Warning:**
+the one-run value must match the provider email you will actually sign in with
 once account login lands; a mismatch strands the migrated seats on an account
 you cannot enter (automation keeps working, and reconnecting after an eventual
 `invalid_grant` re-creates the seat under your real account). Fresh installs
 and installs with no connected harness skip all of this.
+
+Once the account-login release is deployed, finish the cutover — deploys never
+refresh the host-copied `compose.yaml`/`Caddyfile`, so this is an explicit
+step (re-running `install.sh` performs the copy for you):
+
+1. Replace the host copies of `deploy/compose.yaml` and
+   `deploy/caddy/Caddyfile` with this release's versions (the Caddy gate now
+   admits any nonempty trusted identity; the app enforces its own session).
+2. Delete the now-unused `DRUKS_DASHBOARD_EMAIL` line from `~/druks/.env`.
+3. Recreate the affected services: `docker compose up -d --force-recreate web
+   caddy`.
+
+Until those land, the new release still runs behind the old single-email gate
+— that transition window is supported. Afterwards, each browser performs one
+harness login to mint its session cookie.
 
 ### One-time: upgrading a box that ran the backend as root
 
@@ -225,6 +239,7 @@ Caddyfile fetched by the installer) enforces path-level access:
   Druks. Per-provider paths land under
   `/_external/<provider>/<category>/`; extension role-module discovery
   registers them at import time.
-- Everything else — exe.dev login + `DRUKS_DASHBOARD_EMAIL` match
-  required, then proxied to `web` (`127.0.0.1:8001`), which
-  serves the API, the SPA, and extension frontends alike.
+- Everything else — a nonempty trusted identity header (exe.dev login
+  provides one) required, then proxied to `web` (`127.0.0.1:8001`), which
+  serves the API, the SPA, and extension frontends alike; the app itself
+  requires its session cookie, minted by harness login.

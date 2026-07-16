@@ -203,11 +203,14 @@ coordination such as webhook deduplication, OAuth state/token caches, and the
 sandbox provisioning gate. Drukbox provisions sandbox hosts; Druks then reaches
 them over SSH.
 
-FastAPI does not implement end-user login. In the shipped remote stack, Caddy
-trusts an identity header inserted by exe.dev or another upstream proxy and
-allows the one configured dashboard email. Public webhook routes bypass that
-identity gate but still require provider authentication. A local dashboard
-bound directly to `127.0.0.1:8001` has no application login and must not be
-published as-is. The upstream proxy must remove any client-supplied copy of the
-trusted identity header before inserting its authenticated value; merely
-forwarding that header makes the dashboard gate forgeable.
+Harness login is the application's login: connecting Codex or Claude resolves
+an account and mints the `druks_session` cookie (30-day sliding TTL in Redis)
+that every internal API and SSE stream requires. In the shipped remote stack,
+Caddy additionally requires an identity header inserted by exe.dev or another
+upstream proxy — a pure admission check; the app never reads it. Public `/_external`
+routes — webhooks and the token-authenticated notification respond — bypass
+the session gate but keep their own authentication. A local dashboard bound directly to
+`127.0.0.1:8001` still requires the session but has no edge in front and must
+not be published as-is. The upstream proxy must remove any client-supplied
+copy of the trusted identity header before inserting its authenticated value;
+merely forwarding that header makes identity resolution forgeable.

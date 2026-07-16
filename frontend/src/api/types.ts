@@ -188,18 +188,25 @@ export interface Harness {
   fastMode: boolean
   effort: string
   timeout: number
-  // Connection state — false until the operator connects the subscription.
+  // The signed-in account's own connection; false until this account connects.
   connected: boolean
   kind: string | null
   account: string | null
+  /** The email the provider reported at connect — display, never authority. */
+  providerEmail: string | null
   expiresAt: string | null
+}
+
+export interface Account {
+  id: string
+  email: string
 }
 
 export interface LoginChallenge {
   authorizeUrl: string
   /** Opaque id of this connect attempt; passed back on complete so
    * concurrent sign-ins never clobber each other's pending state. */
-  flowId: string
+  loginId: string
 }
 
 export interface UpdateHarnessRequest {
