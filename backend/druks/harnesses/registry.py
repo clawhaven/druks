@@ -9,6 +9,13 @@ def get_harnesses() -> tuple[type[Harness], ...]:
     return tuple(sorted(Harness.__subclasses__(), key=lambda harness: harness.name))
 
 
+def get_harness(name: str) -> type[Harness] | None:
+    """The harness registered under ``name``, or None."""
+    for harness in get_harnesses():
+        if harness.name == name:
+            return harness
+
+
 def get_harness_for_model(model: str) -> type[Harness]:
     """The harness that runs ``model``, matched by name namespace — a model in a
     known namespace routes even if it postdates this release. A miss means no

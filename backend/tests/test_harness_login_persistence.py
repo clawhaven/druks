@@ -60,8 +60,11 @@ def _committed(engine, work):
 
 
 def _connect(payload: dict) -> str:
+    from druks.accounts.models import Account
+
     row = HarnessConnection.connect(
         harness="claude",
+        account=Account.get_or_create("op@example.com"),
         payload=payload,
         expires_at=None,
         provider_email="op@example.com",
@@ -70,7 +73,7 @@ def _connect(payload: dict) -> str:
 
 
 def test_rotation_persists_new_payload_across_sessions(engine):
-    # Connect the seat, rotate its payload the way rotate_token does (plain-dict
+    # Connect, then rotate the payload the way rotate_token does (plain-dict
     # copy, edit, whole-value update), then read it back from a fresh session —
     # commit + new session proves the edit reached the DB, not just the
     # in-memory object.
@@ -93,9 +96,7 @@ def test_rotation_persists_new_payload_across_sessions(engine):
 
 
 def test_payload_is_ciphertext_at_rest(engine):
-    _committed(
-        engine, lambda: _connect({"claudeAiOauth": {"accessToken": "supersecret"}})
-    )
+    _committed(engine, lambda: _connect({"claudeAiOauth": {"accessToken": "supersecret"}}))
 
     with engine.connect() as connection:
         stored = connection.execute(text("SELECT payload FROM harness_logins")).scalar_one()

@@ -63,6 +63,12 @@ class FakeRedis:
     async def get(self, key: str) -> bytes | None:
         return self._data.get(key)
 
+    async def getex(self, key: str, *, ex: int | None = None) -> bytes | None:
+        value = self._data.get(key)
+        if value is not None and ex is not None:
+            self._ttls[key] = ex
+        return value
+
     async def exists(self, key: str) -> int:
         return int(key in self._data)
 
@@ -292,8 +298,10 @@ def configure_app_for_test(
     *,
     settings: Settings,
     engine=None,
+    authenticated: bool = True,
 ):
 
+    from druks.accounts.dependencies import current_account
     from druks.api.app import app
 
     if engine is None:
@@ -302,7 +310,17 @@ def configure_app_for_test(
     configure_session(engine)
     app.state.settings = settings
     app.state.engine = engine
+    if authenticated:
+        # Stand a signed-in account in for the gate; auth tests pass
+        # authenticated=False and walk the real cookie flow.
+        app.dependency_overrides[current_account] = _test_account
     return app
+
+
+async def _test_account():
+    from druks.accounts.models import Account
+
+    return Account.get_or_create("op@example.com")
 
 
 @pytest.fixture(autouse=True)
@@ -354,14 +372,17 @@ def bind_ambient_session(session) -> None:
 
 
 def connect_harness(harness_cls, payload: dict, *, provider_email: str = "op@example.com"):
-    """Seed a connected seat the way a finished connect flow would: an account
-    keyed by the provider email plus the harness's login row, expiry mirrored
-    out of the payload. Returns the HarnessConnection row."""
+    """Seed the HarnessConnection row a finished connect flow would leave."""
+    from druks.accounts.models import Account
     from druks.harnesses.models import HarnessConnection
+    from druks.user_settings.models import UserSettings
 
+    account = Account.get_or_create(provider_email)
+    UserSettings.ensure_fallback_account(account.id)
     _, expires_at = harness_cls._refresh_state(payload)
     return HarnessConnection.connect(
         harness=harness_cls.name,
+        account=account,
         payload=payload,
         expires_at=expires_at,
         provider_email=provider_email,

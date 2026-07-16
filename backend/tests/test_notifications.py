@@ -280,36 +280,40 @@ async def test_respond_route_codes_and_secret_hygiene(tmp_path, db_session, resu
     token = notification.correlation_token
     client = TestClient(configure_app_for_test(settings=make_settings(tmp_path)))
 
-    unknown = client.post("/api/notifications/no-such-token/respond", json={"control": "approve"})
+    unknown = client.post(
+        "/_external/notifications/no-such-token/respond", json={"control": "approve"}
+    )
     assert unknown.status_code == 404
     assert "no-such-token" not in unknown.json()["detail"]
 
-    bad_control = client.post(f"/api/notifications/{token}/respond", json={"control": "merge"})
+    bad_control = client.post(
+        f"/_external/notifications/{token}/respond", json={"control": "merge"}
+    )
     assert bad_control.status_code == 422
 
     bad_question = client.post(
-        f"/api/notifications/{token}/respond",
+        f"/_external/notifications/{token}/respond",
         json={"control": "approve", "answers": {"q9": "x"}},
     )
     assert bad_question.status_code == 422
 
     blank_answer = client.post(
-        f"/api/notifications/{token}/respond",
+        f"/_external/notifications/{token}/respond",
         json={"control": "approve", "answers": {"q1": "   "}},
     )
     assert blank_answer.status_code == 422
 
     empty_changes = client.post(
-        f"/api/notifications/{token}/respond", json={"control": "request_changes"}
+        f"/_external/notifications/{token}/respond", json={"control": "request_changes"}
     )
     assert empty_changes.status_code == 422
     assert resume_spy == []
 
-    ok = client.post(f"/api/notifications/{token}/respond", json={"control": "approve"})
+    ok = client.post(f"/_external/notifications/{token}/respond", json={"control": "approve"})
     assert ok.status_code == 204
     assert len(resume_spy) == 1
 
-    again = client.post(f"/api/notifications/{token}/respond", json={"control": "approve"})
+    again = client.post(f"/_external/notifications/{token}/respond", json={"control": "approve"})
     assert again.status_code == 409
     assert len(resume_spy) == 1
     for response in (unknown, bad_control, bad_question, blank_answer, empty_changes, again):
@@ -324,7 +328,7 @@ async def test_respond_external_notification_not_answerable(tmp_path, db_session
     client = TestClient(configure_app_for_test(settings=make_settings(tmp_path)))
 
     response = client.post(
-        f"/api/notifications/{notification.correlation_token}/respond",
+        f"/_external/notifications/{notification.correlation_token}/respond",
         json={"control": "approve"},
     )
 
@@ -341,7 +345,7 @@ async def test_respond_runless_notification_not_answerable(tmp_path, db_session,
     client = TestClient(configure_app_for_test(settings=make_settings(tmp_path)))
 
     response = client.post(
-        f"/api/notifications/{notification.correlation_token}/respond",
+        f"/_external/notifications/{notification.correlation_token}/respond",
         json={"control": "approve"},
     )
 
@@ -372,7 +376,7 @@ async def test_respond_stale_round_409(tmp_path, db_session, resume_spy):
     client = TestClient(configure_app_for_test(settings=make_settings(tmp_path)))
 
     response = client.post(
-        f"/api/notifications/{notification.correlation_token}/respond",
+        f"/_external/notifications/{notification.correlation_token}/respond",
         json={"control": "approve"},
     )
 
@@ -385,7 +389,7 @@ async def test_respond_run_no_longer_parked_409(tmp_path, db_session, resume_spy
     client = TestClient(configure_app_for_test(settings=make_settings(tmp_path)))
 
     response = client.post(
-        f"/api/notifications/{notification.correlation_token}/respond",
+        f"/_external/notifications/{notification.correlation_token}/respond",
         json={"control": "approve"},
     )
 
@@ -403,7 +407,7 @@ async def test_respond_corrupt_correlation_500_and_logged(
     )
 
     response = client.post(
-        f"/api/notifications/{notification.correlation_token}/respond",
+        f"/_external/notifications/{notification.correlation_token}/respond",
         json={"control": "approve"},
     )
 
@@ -442,7 +446,7 @@ async def test_respond_ask_without_presentation_not_answerable(tmp_path, db_sess
     client = TestClient(configure_app_for_test(settings=make_settings(tmp_path)))
 
     response = client.post(
-        f"/api/notifications/{notification.correlation_token}/respond",
+        f"/_external/notifications/{notification.correlation_token}/respond",
         json={"control": "approve"},
     )
 

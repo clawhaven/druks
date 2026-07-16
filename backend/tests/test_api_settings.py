@@ -1,8 +1,6 @@
 from pathlib import Path
 
-import httpx
 from conftest import configure_app_for_test, make_settings
-from druks.harnesses import base as hbase
 from fastapi.testclient import TestClient
 
 
@@ -34,66 +32,69 @@ def test_harness_response_carries_connection_state(tmp_path: Path):
     with _build_client(tmp_path) as client:
         claude = {h["name"]: h for h in client.get("/api/settings/harnesses").json()}["claude"]
     assert claude["connected"] is False
-    assert claude["account"] is None
+    assert not claude["account"]
+    assert not claude["providerEmail"]
     assert "expiresAt" in claude
 
 
-def test_login_start_returns_authorize_url_and_flow_id(tmp_path: Path):
+def test_harnesses_show_only_the_signed_in_accounts_connection(tmp_path: Path, db_session):
+    from conftest import connect_harness
+    from druks.harnesses.claude import ClaudeHarness
+
+    # The suite's gate stands in op@example.com; another account's
+    # connection never shows on this card.
+    connect_harness(
+        ClaudeHarness,
+        {"claudeAiOauth": {"accessToken": "x"}},
+        provider_email="someone-else@example.com",
+    )
     with _build_client(tmp_path) as client:
-        response = client.post("/api/settings/harnesses/claude/login/start")
+        claude = {h["name"]: h for h in client.get("/api/settings/harnesses").json()}["claude"]
+    assert claude["connected"] is False
+
+
+def test_harness_card_reports_identity(tmp_path: Path, db_session):
+    from druks.accounts.models import Account
+    from druks.harnesses.models import HarnessConnection
+
+    # The provider identity is display, never authority.
+    HarnessConnection.connect(
+        harness="claude",
+        account=Account.get_or_create("op@example.com"),
+        payload={"claudeAiOauth": {"accessToken": "x"}},
+        expires_at=None,
+        provider_email="seat@corp.com",
+    )
+    with _build_client(tmp_path) as client:
+        claude = {h["name"]: h for h in client.get("/api/settings/harnesses").json()}["claude"]
+    assert claude["connected"] is True
+    assert claude["account"] == "op@example.com"
+    assert claude["providerEmail"] == "seat@corp.com"
+
+
+def test_disconnect_removes_only_the_signed_in_accounts_connection(tmp_path: Path, db_session):
+    from conftest import connect_harness
+    from druks.harnesses.claude import ClaudeHarness
+    from druks.harnesses.models import HarnessConnection
+
+    mine = connect_harness(ClaudeHarness, {"claudeAiOauth": {"accessToken": "x"}})
+    other = connect_harness(
+        ClaudeHarness,
+        {"claudeAiOauth": {"accessToken": "y"}},
+        provider_email="someone-else@example.com",
+    )
+    mine_id, other_id = mine.id, other.id
+    with _build_client(tmp_path) as client:
+        response = client.delete("/api/settings/harnesses/claude/login")
     assert response.status_code == 200
-    assert response.json()["authorizeUrl"].startswith("https://claude.ai/oauth/authorize?")
-    assert response.json()["flowId"]
+    assert response.json()["connected"] is False
+    # The request deleted in its own task-scoped session; read past this
+    # task's identity map for what actually persisted.
+    assert not HarnessConnection.reload(mine_id)
+    assert HarnessConnection.reload(other_id)
 
 
-def test_login_start_unknown_harness_is_404(tmp_path: Path):
-    with _build_client(tmp_path) as client:
-        response = client.post("/api/settings/harnesses/grok/login/start")
-    assert response.status_code == 404
-
-
-def test_login_complete_with_no_code_is_422(tmp_path: Path):
-    with _build_client(tmp_path) as client:
-        flow_id = client.post("/api/settings/harnesses/claude/login/start").json()["flowId"]
-        # Empty paste fails before any provider call — clean check of the
-        # LoginError -> 422 wiring without mocking the exchange.
-        response = client.post(
-            "/api/settings/harnesses/claude/login/complete",
-            json={"code": "", "flowId": flow_id},
-        )
-    assert response.status_code == 422
-
-
-def test_login_complete_without_flow_id_is_422(tmp_path: Path):
-    with _build_client(tmp_path) as client:
-        client.post("/api/settings/harnesses/claude/login/start")
-        response = client.post(
-            "/api/settings/harnesses/claude/login/complete", json={"code": "x"}
-        )
-    assert response.status_code == 422
-
-
-def test_login_complete_provider_rejection_is_422(tmp_path: Path, monkeypatch):
-    async def fake_post(self, url, *, json=None, data=None, **kwargs):
-        return httpx.Response(
-            400,
-            text="invalid_grant: code expired",
-            request=httpx.Request("POST", url),
-        )
-
-    monkeypatch.setattr(hbase.httpx.AsyncClient, "post", fake_post)
-    with _build_client(tmp_path) as client:
-        flow_id = client.post("/api/settings/harnesses/claude/login/start").json()["flowId"]
-        response = client.post(
-            "/api/settings/harnesses/claude/login/complete",
-            json={"code": "code", "flowId": flow_id},
-        )
-
-    assert response.status_code == 422
-    assert "invalid_grant" in response.json()["detail"]
-
-
-def test_disconnect_returns_disconnected_status(tmp_path: Path):
+def test_disconnect_without_a_connection_is_a_no_op(tmp_path: Path):
     with _build_client(tmp_path) as client:
         response = client.delete("/api/settings/harnesses/claude/login")
     assert response.status_code == 200

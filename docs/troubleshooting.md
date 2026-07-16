@@ -66,15 +66,18 @@ The installer performs these steps in this order.
 
 ## The dashboard is inaccessible
 
-The shipped remote edge admits the single `DRUKS_DASHBOARD_EMAIL` when the
-configured `DRUKS_AUTH_HEADER` carries that identity. A 403 means a header was
-present with the wrong value. A redirect to `__exe.dev/login` means no trusted
-identity header reached Caddy.
+The shipped remote edge admits any request whose configured
+`DRUKS_AUTH_HEADER` carries a nonempty trusted identity; from there the app
+itself asks you to connect a harness, which mints the session cookie. A
+redirect to `__exe.dev/login` means no trusted identity header reached Caddy.
+A dashboard that loads but immediately shows the connect screen means the
+session cookie is missing or expired — sign in with Codex or Claude again
+(Redis loss signs everyone out but never touches stored credentials).
 
 Check:
 
 ```bash
-grep -E '^(DRUKS_DASHBOARD_EMAIL|DRUKS_AUTH_HEADER|DRUKS_UPSTREAM)=' ~/druks/.env
+grep -E '^(DRUKS_AUTH_HEADER|DRUKS_UPSTREAM)=' ~/druks/.env
 docker compose logs --tail=200 caddy web
 ```
 

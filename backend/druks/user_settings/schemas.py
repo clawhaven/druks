@@ -8,6 +8,7 @@ from druks.extensions.settings import field_choices, field_kind
 from druks.schemas import BaseResponse
 
 if TYPE_CHECKING:
+    from druks.accounts.models import Account
     from druks.harnesses.models import HarnessConnection
     from druks.user_settings.models import HarnessSettings
 
@@ -20,16 +21,17 @@ class HarnessResponse(BaseResponse):
     timeout: int
     fast_mode: bool
     allowed_models: list[str]
-    # Connection state, joined in from the harness's default HarnessConnection row —
-    # connected=False until someone connects it from the dashboard.
+    # The signed-in account's own connection; false until this account connects.
     connected: bool
     kind: str | None
     account: str | None
+    # The email the provider reported at connect — display, never authority.
+    provider_email: str | None
     expires_at: datetime | None
 
     @classmethod
     def from_row(
-        cls, settings: "HarnessSettings", login: "HarnessConnection | None"
+        cls, settings: "HarnessSettings", login: "HarnessConnection | None", account: "Account"
     ) -> "HarnessResponse":
         return cls(
             name=settings.name,
@@ -41,7 +43,8 @@ class HarnessResponse(BaseResponse):
             allowed_models=settings.allowed_models,
             connected=bool(login),
             kind=login.kind if login else None,
-            account=login.provider_email if login else None,
+            account=account.email if login else None,
+            provider_email=login.provider_email if login else None,
             expires_at=login.expires_at if login else None,
         )
 

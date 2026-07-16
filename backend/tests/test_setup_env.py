@@ -58,7 +58,7 @@ def test_docker_provider_wires_drukbox_on_host(tmp_path):
 
     rc = _run(env_path, provider="docker")
 
-    assert rc == GAPS_EXIT_CODE  # same GitHub/email/PEM gaps as every shape
+    assert rc == GAPS_EXIT_CODE  # same GitHub/PEM gaps as every shape
     values = read_env(env_path)
     assert values["DEFAULT_HOST_PROVIDER"] == "docker"
     # Pointed at drukbox on the host (`make dev`), not a drukbox container.
@@ -77,16 +77,14 @@ def test_rerun_preserves_values_secrets_and_operator_additions(tmp_path):
     first = read_env(env_path)
     # Operator fills a value and adds a custom var by hand.
     env_path.write_text(
-        env_path.read_text().replace(
-            "DRUKS_DASHBOARD_EMAIL=", "DRUKS_DASHBOARD_EMAIL=op@example.com"
-        )
+        env_path.read_text().replace("GITHUB_OPERATOR_APP_ID=", "GITHUB_OPERATOR_APP_ID=111")
         + "\nMY_CUSTOM_FLAG=on\n"
     )
 
     _run(env_path)
 
     values = read_env(env_path)
-    assert values["DRUKS_DASHBOARD_EMAIL"] == "op@example.com"
+    assert values["GITHUB_OPERATOR_APP_ID"] == "111"
     assert values["DRUKS_WEBHOOK_SECRET"] == first["DRUKS_WEBHOOK_SECRET"]  # not regenerated
     assert values["MY_CUSTOM_FLAG"] == "on"  # hand edits survive
 
@@ -104,7 +102,6 @@ def test_interactive_prompts_fill_only_blanks(tmp_path):
     env_path = tmp_path / ".env"
     answers = iter(
         [
-            "op@example.com",  # dashboard email
             "111",  # operator app id
             "222",  # reviewer app id
             "",  # linear api key — skipped
@@ -120,7 +117,7 @@ def test_interactive_prompts_fill_only_blanks(tmp_path):
     rc = _run(env_path, interactive=True, input_fn=lambda _prompt: next(answers))
 
     values = read_env(env_path)
-    assert values["DRUKS_DASHBOARD_EMAIL"] == "op@example.com"
+    assert values["GITHUB_OPERATOR_APP_ID"] == "111"
     assert values["GITHUB_REVIEWER_APP_ID"] == "222"
     assert values["EXE_API_TOKEN"] == "exe-token"
     # Required values all present — only the PEM files gate the boot now.
@@ -136,7 +133,7 @@ def test_interactive_prompts_fill_only_blanks(tmp_path):
 
 def test_rerun_with_complete_env_prompts_nothing(tmp_path):
     env_path = tmp_path / ".env"
-    answers = iter(["op@example.com", "111", "222", "", "", "", "t.ts.net", "", "", "tok"])
+    answers = iter(["111", "222", "", "", "", "t.ts.net", "", "", "tok"])
     _run(env_path, interactive=True, input_fn=lambda _p: next(answers))
     (tmp_path / "secrets" / "operator.pem").write_text("pem")
     (tmp_path / "secrets" / "reviewer.pem").write_text("pem")
@@ -151,7 +148,7 @@ def test_custom_pem_location_is_not_boot_gated(tmp_path):
     """A PEM outside the install dir can't be checked pre-boot — doctor owns
     that post-boot; setup must not block on it."""
     env_path = tmp_path / ".env"
-    answers = iter(["op@e.com", "111", "222", "", "", "", "t.ts.net", "", "", "tok"])
+    answers = iter(["111", "222", "", "", "", "t.ts.net", "", "", "tok"])
     _run(env_path, interactive=True, input_fn=lambda _p: next(answers))
     body = env_path.read_text().replace(
         "GITHUB_OPERATOR_PEM=/home/op/druks/secrets/operator.pem",

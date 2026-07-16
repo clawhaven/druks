@@ -1,4 +1,5 @@
 import type {
+  Account,
   AgentCallFiles,
   ArtifactContent,
   DashboardHealth,
@@ -21,6 +22,12 @@ import type {
   UserSettings,
 } from './types'
 
+// A 401 means the session is gone: typed to branch on, broadcast so the
+// AuthProvider unmounts the app.
+export class UnauthorizedError extends Error {}
+
+export const AUTH_EXPIRED_EVENT = 'druks:auth-expired'
+
 // FastAPI puts the human-readable message in ``detail``; throw that as the
 // Error message so consumers display it as-is. Non-JSON bodies (proxy pages,
 // validation arrays) fall back to the status line.
@@ -32,15 +39,24 @@ async function throwApiError(response: Response, path: string): Promise<never> {
   } catch {
     // not JSON — fall through to the status line
   }
-  throw new Error(
+  const message =
     typeof detail === 'string' && detail
       ? detail
-      : `${response.status} ${response.statusText}: ${body || path}`,
-  )
+      : `${response.status} ${response.statusText}: ${body || path}`
+  if (response.status === 401) {
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+    throw new UnauthorizedError(message)
+  }
+  throw new Error(message)
 }
 
+const SAME_ORIGIN: RequestCredentials = 'same-origin'
+
 export async function getJSON<T>(path: string): Promise<T> {
-  const response = await fetch(path, { headers: { Accept: 'application/json' } })
+  const response = await fetch(path, {
+    headers: { Accept: 'application/json' },
+    credentials: SAME_ORIGIN,
+  })
   if (!response.ok) {
     await throwApiError(response, path)
   }
@@ -51,6 +67,7 @@ export async function postJSON<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    credentials: SAME_ORIGIN,
     body: JSON.stringify(body),
   })
   if (!response.ok) {
@@ -63,6 +80,7 @@ export async function patchJSON<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(path, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    credentials: SAME_ORIGIN,
     body: JSON.stringify(body),
   })
   if (!response.ok) {
@@ -72,14 +90,18 @@ export async function patchJSON<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function deleteRequest(path: string): Promise<void> {
-  const response = await fetch(path, { method: 'DELETE' })
+  const response = await fetch(path, { method: 'DELETE', credentials: SAME_ORIGIN })
   if (!response.ok && response.status !== 204) {
     await throwApiError(response, path)
   }
 }
 
 export async function deleteJSON<T>(path: string): Promise<T> {
-  const response = await fetch(path, { method: 'DELETE', headers: { Accept: 'application/json' } })
+  const response = await fetch(path, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' },
+    credentials: SAME_ORIGIN,
+  })
   if (!response.ok) {
     await throwApiError(response, path)
   }
@@ -91,11 +113,29 @@ export async function postNoContent(path: string, body: unknown): Promise<void> 
   const response = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: SAME_ORIGIN,
     body: JSON.stringify(body),
   })
   if (!response.ok) {
     await throwApiError(response, path)
   }
+}
+
+// Harness login mints the session; landing and Settings reconnect share it.
+export const authApi = {
+  session: (): Promise<Account | null> =>
+    getJSON<Account>('/api/auth/session').catch((error) => {
+      if (error instanceof UnauthorizedError) return null
+      throw error
+    }),
+  startLogin: (name: string) =>
+    postJSON<LoginChallenge>(`/api/auth/harnesses/${encodeURIComponent(name)}/login/start`, {}),
+  completeLogin: (name: string, code: string, loginId: string) =>
+    postJSON<Account>(`/api/auth/harnesses/${encodeURIComponent(name)}/login/complete`, {
+      code,
+      loginId,
+    }),
+  logout: () => postNoContent('/api/auth/logout', {}),
 }
 
 // The generic subject read-side every extension gets for free at
@@ -140,13 +180,6 @@ export const api = {
   harnesses: () => getJSON<Harness[]>('/api/settings/harnesses'),
   updateHarness: (name: string, body: UpdateHarnessRequest) =>
     patchJSON<Harness>(`/api/settings/harnesses/${encodeURIComponent(name)}`, body),
-  startHarnessLogin: (name: string) =>
-    postJSON<LoginChallenge>(`/api/settings/harnesses/${encodeURIComponent(name)}/login/start`, {}),
-  completeHarnessLogin: (name: string, code: string, flowId: string) =>
-    postJSON<Harness>(`/api/settings/harnesses/${encodeURIComponent(name)}/login/complete`, {
-      code,
-      flowId,
-    }),
   disconnectHarness: (name: string) =>
     deleteJSON<Harness>(`/api/settings/harnesses/${encodeURIComponent(name)}/login`),
   getExtensionSettings: () => getJSON<ExtensionsSettingsResponse>('/api/settings/extensions'),

@@ -24,6 +24,7 @@ from .harnesses.models import HarnessConnection
 from .harnesses.registry import get_harnesses
 from .sandbox.client import sandbox_client
 from .settings import Settings, load_settings
+from .user_settings.models import UserSettings
 from .webhooks.base import Webhook
 from .workflows import Workflow
 
@@ -174,11 +175,17 @@ def check_harness_credentials(settings: Settings) -> list[CheckResult]:
     engine = create_engine_from_url(settings.database_url)
     try:
         with Session(engine) as session:
+            fallback_id = session.scalar(
+                select(UserSettings.fallback_account_id).where(
+                    UserSettings.id == UserSettings.SINGLETON_ID
+                )
+            )
             results: list[CheckResult] = []
             for harness in get_harnesses():
                 row = session.scalar(
                     select(HarnessConnection).where(
-                        HarnessConnection.harness == harness.name, HarnessConnection.is_default
+                        HarnessConnection.harness == harness.name,
+                        HarnessConnection.account_id == fallback_id,
                     )
                 )
                 results.append(

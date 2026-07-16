@@ -43,11 +43,6 @@ _COMMON_SECTIONS: tuple[Section, ...] = (
     Section(
         "EDIT THESE (the installer refuses to boot until they're filled in)",
         (
-            Entry(
-                "DRUKS_DASHBOARD_EMAIL",
-                prompt="Dashboard login email",
-                required=True,
-            ),
             # Where druks may act is NOT configured here — it's wherever the
             # operator GitHub App is installed. Install/uninstall the App to
             # grant/revoke; `druks doctor` shows the effective set.

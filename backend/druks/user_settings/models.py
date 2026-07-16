@@ -30,6 +30,11 @@ class UserSettings(Base):
     gate_park_destination_id: Mapped[str | None] = mapped_column(
         ForeignKey("notification_destinations.id", ondelete="SET NULL"), default=None
     )
+    # The account actor-less runs (webhooks, schedules) run as, until runs are
+    # account-attributed; the very first login sets it.
+    fallback_account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), default=None
+    )
     updated_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
 
     SINGLETON_ID = 1
@@ -48,6 +53,14 @@ class UserSettings(Base):
             self.timezone = timezone
         self.updated_at = Base.utc_now()
         db_session().flush()
+
+    @classmethod
+    def ensure_fallback_account(cls, account_id: str) -> None:
+        settings = cls.get()
+        if not settings.fallback_account_id:
+            settings.fallback_account_id = account_id
+            settings.updated_at = Base.utc_now()
+            db_session().flush()
 
     def set_gate_park_destination(self, destination_id: str | None) -> None:
         # None is the off-switch, so this is a set-or-clear, not a skip-on-None.
@@ -89,9 +102,9 @@ class HarnessSettings(Base):
 
     @property
     def harness(self) -> "type[Harness]":
-        from druks.harnesses.registry import get_harnesses
+        from druks.harnesses.registry import get_harness
 
-        return next(h for h in get_harnesses() if h.name == self.name)
+        return get_harness(self.name)
 
     @property
     def provider(self) -> str:

@@ -60,7 +60,7 @@ def _log_result(result: RotationResult) -> None:
             result.expires_at,
         )
     elif result.action == "failed" and result.error != "no_credentials":
-        # invalid_grant => that seat must re-login; network/http_* => transient.
+        # invalid_grant => that login must reconnect; network/http_* => transient.
         # no_credentials is a row deleted mid-tick, not a failure — stay quiet.
         logger.warning(
             "token refresh failed for %s login %s: %s",

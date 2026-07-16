@@ -12,6 +12,7 @@ from druks.harnesses.claude import ClaudeHarness
 from druks.harnesses.codex import CodexHarness
 from druks.harnesses.exceptions import HarnessNotConnectedError, OAuthTokenError
 from druks.harnesses.models import HarnessConnection
+from druks.user_settings.models import UserSettings
 
 _NOW = datetime(2026, 6, 4, 20, 0, tzinfo=UTC)
 
@@ -160,7 +161,7 @@ async def test_claude_invalid_grant_drops_row(monkeypatch, db_session):
     assert result.error == "invalid_grant"
     # A revoked lineage self-disconnects and commits inside the rotation — the
     # deletion never rides (or rolls back with) the tick's later commit.
-    assert HarnessConnection.get_default("claude") is None
+    assert not HarnessConnection.list_all()
     with pytest.raises(HarnessNotConnectedError):
         ClaudeHarness.get_credentials()
 
@@ -195,7 +196,7 @@ async def test_codex_invalid_grant_drops_row(monkeypatch, db_session):
     _mock_post(monkeypatch, _resp(400, {"error": "invalid_grant"}))
     result = await CodexHarness.rotate_token(login.id, now=_NOW)
     assert result.error == "invalid_grant"
-    assert HarnessConnection.get_default("codex") is None
+    assert not HarnessConnection.list_all()
     with pytest.raises(HarnessNotConnectedError):
         CodexHarness.get_credentials()
 
@@ -262,11 +263,15 @@ async def test_codex_no_refresh_token(monkeypatch, db_session):
 
 async def test_rotation_touches_only_the_addressed_row(monkeypatch, db_session):
     stale = _seed_claude(
-        access="old", refresh="R0", expires_at=_NOW + timedelta(minutes=30),
+        access="old",
+        refresh="R0",
+        expires_at=_NOW + timedelta(minutes=30),
         provider_email="a@example.com",
     )
     other = _seed_claude(
-        access="keep", refresh="RK", expires_at=_NOW + timedelta(minutes=30),
+        access="keep",
+        refresh="RK",
+        expires_at=_NOW + timedelta(minutes=30),
         provider_email="b@example.com",
     )
     stale_id, other_id = stale.id, other.id
@@ -280,17 +285,15 @@ async def test_rotation_touches_only_the_addressed_row(monkeypatch, db_session):
 
 
 async def test_invalid_grant_drops_only_the_addressed_row(monkeypatch, db_session):
-    default = _seed_claude(access="d", expires_at=_NOW - timedelta(minutes=1))
+    kept = _seed_claude(access="d", expires_at=_NOW - timedelta(minutes=1))
     other = _seed_claude(
         access="o", expires_at=_NOW - timedelta(minutes=1), provider_email="b@example.com"
     )
-    default_id, other_id = default.id, other.id
+    kept_id, other_id = kept.id, other.id
     _mock_post(monkeypatch, _resp(400, {"error": "invalid_grant"}))
     await ClaudeHarness.rotate_token(other_id, now=_NOW)
-    assert HarnessConnection.get(other_id) is None
-    # The default login is untouched — and an auto-disconnect elsewhere never
-    # promoted anything.
-    assert HarnessConnection.get_default("claude").id == default_id
+    assert not HarnessConnection.get(other_id)
+    assert HarnessConnection.get(kept_id)
 
 
 async def test_concurrent_rotations_produce_one_grant(monkeypatch, db_session):
@@ -321,30 +324,27 @@ async def test_rotation_lock_is_released_after_refresh(monkeypatch, db_session):
     assert await druks.redis.get_client().get(f"druks:harness:refresh:{login.id}") is None
 
 
-def test_disconnect_removes_only_the_default_login_without_promotion(db_session):
-    default = _seed_claude(provider_email="a@example.com")
+def test_disconnect_removes_only_the_addressed_login(db_session):
+    mine = _seed_claude(provider_email="a@example.com")
     other = _seed_claude(provider_email="b@example.com")
-    assert HarnessConnection.get_default("claude").id == default.id
 
-    ClaudeHarness.disconnect()
+    mine.delete()
 
-    assert HarnessConnection.get(default.id) is None
-    assert HarnessConnection.get(other.id) is not None
-    assert HarnessConnection.get_default("claude") is None  # no silent promotion
+    assert HarnessConnection.get(other.id)
+    # The fallback account (the first) has no claude login left; another
+    # account's credential never leaks into execution.
     with pytest.raises(HarnessNotConnectedError):
         ClaudeHarness.get_credentials()
 
 
-def test_reconnect_after_default_gone_becomes_default(db_session):
-    default = _seed_claude(provider_email="a@example.com")
-    _seed_claude(provider_email="b@example.com")
-    ClaudeHarness.disconnect()
-    assert HarnessConnection.get_default("claude") is None
+def test_reconnect_restores_execution(db_session):
+    mine = _seed_claude(provider_email="a@example.com")
+    mine.delete()
+    with pytest.raises(HarnessNotConnectedError):
+        ClaudeHarness.get_credentials()
 
-    # An explicit reconnect of the surviving login is the sanctioned promotion.
-    row = _seed_claude(provider_email="b@example.com")
-    assert HarnessConnection.get_default("claude").id == row.id
-    assert row.id != default.id
+    _seed_claude(access="fresh", provider_email="a@example.com")
+    assert ClaudeHarness.get_credentials()["claudeAiOauth"]["accessToken"] == "fresh"
 
 
 def test_connect_scopes_rows_by_harness_and_account(db_session):
@@ -356,9 +356,8 @@ def test_connect_scopes_rows_by_harness_and_account(db_session):
     assert claude_row.account_id == codex_row.account_id  # same person, one account
     assert other.account_id != claude_row.account_id
     assert Account.get_for_email("a@example.com").id == claude_row.account_id
-    # The first login per harness stays the default.
-    assert HarnessConnection.get_default("claude").id == claude_row.id
-    assert HarnessConnection.get_default("codex").id == codex_row.id
+    # The first account adopted the execution fallback.
+    assert UserSettings.get().fallback_account_id == claude_row.account_id
 
 
 def test_reconnect_updates_the_existing_login_in_place(db_session):
