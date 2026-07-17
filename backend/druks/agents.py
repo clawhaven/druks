@@ -173,7 +173,7 @@ class Agent:
             assignee_email=attributes.get("assignee_email"),
         )
         # Plain snapshots: the commits below expire the ORM row mid-flight.
-        login_id, charged_account_id = login.id, login.account_id
+        connection_id, charged_account_id = login.id, login.account_id
         if fallback_reason:
             # The visible exception beside the moving automation — the nudge
             # that a call charged the fallback account, and why.
@@ -200,7 +200,7 @@ class Agent:
 
         # The call is an active user of its login from provisioning through
         # execution: that login's rotation waits for it; other logins' don't.
-        async with sandbox_gate.use(login_id, call_id):
+        async with sandbox_gate.use(connection_id, call_id):
             host_id = await workflow._ensure_host()
             await set_run_phase("provisioning_vm")
 
@@ -229,7 +229,7 @@ class Agent:
                 )
                 try:
                     result = await self._execute(
-                        runner, model, prompt, artifact_dir, call_id, login_id
+                        runner, model, prompt, artifact_dir, call_id, connection_id
                     )
                 except BaseException as error:
                     AgentCall.fail(engine, call_id=call_id, error=str(error))
@@ -251,7 +251,7 @@ class Agent:
         prompt: str,
         artifact_dir: Path,
         call_id: str,
-        login_id: str,
+        connection_id: str,
     ) -> "AgentResult":
         schema = self.contract.model_json_schema()
         return await runner.run_agent(
@@ -264,5 +264,5 @@ class Agent:
             artifact_dir=artifact_dir,
             call_id=call_id,
             include_plugins=self.include_plugins,
-            login_id=login_id,
+            connection_id=connection_id,
         )

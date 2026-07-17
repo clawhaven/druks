@@ -93,8 +93,8 @@ class _FakeLogins:
 
 def _fake_shut(shut: list[str], *, idle: bool):
     @asynccontextmanager
-    async def fake(login_id: str):
-        shut.append(login_id)
+    async def fake(connection_id: str):
+        shut.append(connection_id)
         yield idle
 
     return fake

@@ -201,7 +201,7 @@ class Sandbox:
         add_dirs: tuple[str, ...] = (),
         extra_env: dict[str, Any] | None = None,
         mcp_servers: tuple[McpServer, ...] = (),
-        login_id: str | None = None,
+        connection_id: str | None = None,
     ) -> AgentResult:
         """Run the harness and return a pure ``AgentResult`` — no database write.
         A failure is captured on the result (``status=FAILED``), not raised.
@@ -254,7 +254,7 @@ class Sandbox:
                 extra_env=extra_env,
                 mcp_servers=mcp_servers,
                 call_id=run_id,
-                login_id=login_id,
+                connection_id=connection_id,
             )
         except Exception as exc:  # noqa: BLE001 — captured on the result, not raised
             status = AgentCallStatus.FAILED
@@ -287,7 +287,7 @@ class Sandbox:
         extra_env: dict[str, str] | None = None,
         mcp_servers: tuple[McpServer, ...] = (),
         call_id: str | None = None,
-        login_id: str | None = None,
+        connection_id: str | None = None,
     ) -> Any:
         """Drive one prompt through ``harness`` on this VM: the harness
         builds the invocation and parses the result; this sandbox executes it.
@@ -312,7 +312,7 @@ class Sandbox:
             add_dirs=add_dirs,
             extra_env=extra_env,
             mcp_servers=mcp_servers,
-            login_id=login_id,
+            connection_id=connection_id,
         )
         result = await self._exec(
             invocation,

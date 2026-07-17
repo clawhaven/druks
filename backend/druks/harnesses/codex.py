@@ -501,7 +501,7 @@ class CodexHarness(Harness):
         add_dirs: tuple[str, ...] = (),
         extra_env: dict[str, str] | None = None,
         mcp_servers: tuple[McpServer, ...] = (),
-        login_id: str | None = None,
+        connection_id: str | None = None,
     ) -> AgentInvocation:
         if not self.sandbox:
             raise HarnessError(
@@ -526,7 +526,9 @@ class CodexHarness(Harness):
             name=self.name,
             args=tuple(cmd),
             stdin=_with_final_message_note(prompt).encode("utf-8"),
-            credentials=self._codex_credentials(github_token=github_token, login_id=login_id),
+            credentials=self._codex_credentials(
+                github_token=github_token, connection_id=connection_id
+            ),
             env=extra_env,
             extra_artifact_filenames=("output.json", "session.jsonl"),
         )
@@ -601,7 +603,7 @@ class CodexHarness(Harness):
         return args
 
     def _codex_credentials(
-        self, *, github_token: str | None, login_id: str | None = None
+        self, *, github_token: str | None, connection_id: str | None = None
     ) -> Credentials:
         # The credential file is synthesized from the DB row (raises when codex
         # isn't connected); the local config dir only adds config carry on top.
@@ -622,7 +624,7 @@ class CodexHarness(Harness):
         if skills_src:
             dirs = ((skills_src, ".codex/skills"),)
         return Credentials(
-            codex_credentials=self.render_credentials_file(login_id),
+            codex_credentials=self.render_credentials_file(connection_id),
             github_token=github_token,
             extra_config_files=files,
             extra_config_dirs=dirs,

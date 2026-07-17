@@ -201,17 +201,18 @@ class Harness(ABC):
         )
 
     @classmethod
-    def render_credentials_file(cls, login_id: str | None = None) -> str:
+    def render_credentials_file(cls, connection_id: str | None = None) -> str:
         """The credential-file JSON the sandbox writes for this CLI — the
-        selected login's payload, read fresh at push time (rotation may have
-        advanced it since selection); the fallback account's for a one-shot
-        caller with no selection. The push writes it as a secret; no host
-        credential file is read. Raises :class:`HarnessNotConnectedError` when
-        the login is gone — a disconnect between selection and render must
-        fail the call, never render another account's payload."""
-        if not login_id:
+        selected connection's payload, read fresh at push time (rotation may
+        have advanced it since selection); the fallback account's for a
+        one-shot caller with no selection. The push writes it as a secret; no
+        host credential file is read. Raises
+        :class:`HarnessNotConnectedError` when the connection is gone — a
+        disconnect between selection and render must fail the call, never
+        render another account's payload."""
+        if not connection_id:
             return json.dumps(cls.get_credentials())
-        row = HarnessConnection.get(login_id)
+        row = HarnessConnection.get(connection_id)
         if row:
             return json.dumps(dict(row.payload))
         raise HarnessNotConnectedError(

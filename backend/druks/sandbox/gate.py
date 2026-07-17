@@ -21,16 +21,16 @@ _POLL = 2.0
 _SHUT_TTL_SECONDS = 60
 
 
-def _rotating_key(login_id: str) -> str:
-    return f"druks:sandbox:rotating:{login_id}"
+def _rotating_key(connection_id: str) -> str:
+    return f"druks:sandbox:rotating:{connection_id}"
 
 
-def _users_key(login_id: str) -> str:
-    return f"druks:sandbox:gate:users:{login_id}"
+def _users_key(connection_id: str) -> str:
+    return f"druks:sandbox:gate:users:{connection_id}"
 
 
 @asynccontextmanager
-async def use(login_id: str, call_id: str) -> AsyncIterator[None]:
+async def use(connection_id: str, call_id: str) -> AsyncIterator[None]:
     """Register one agent call as an active user of its login, provisioning
     through execution. Registration re-checks the rotating flag after adding
     itself and backs out if it appeared — the flag may land between the check
@@ -38,30 +38,30 @@ async def use(login_id: str, call_id: str) -> AsyncIterator[None]:
     client = get_client()
     while True:
         waited = 0.0
-        while waited < _RUN_HORIZON and await client.exists(_rotating_key(login_id)):
+        while waited < _RUN_HORIZON and await client.exists(_rotating_key(connection_id)):
             await asyncio.sleep(_POLL)
             waited += _POLL
-        await client.zadd(_users_key(login_id), {call_id: time.time() + _RUN_HORIZON})
-        if not await client.exists(_rotating_key(login_id)):
+        await client.zadd(_users_key(connection_id), {call_id: time.time() + _RUN_HORIZON})
+        if not await client.exists(_rotating_key(connection_id)):
             break
-        await client.zrem(_users_key(login_id), call_id)
+        await client.zrem(_users_key(connection_id), call_id)
     try:
         yield
     finally:
-        await client.zrem(_users_key(login_id), call_id)
+        await client.zrem(_users_key(connection_id), call_id)
 
 
 @asynccontextmanager
-async def shut(login_id: str) -> AsyncIterator[bool]:
+async def shut(connection_id: str) -> AsyncIterator[bool]:
     """Shut one login's gate and say whether it is idle: True means no active
     calls — rotate now; False means calls are running — defer, the next tick
     retries well inside the refresh margin. Expired registrations are pruned
     first so a crashed caller never defers rotation forever. The gate reopens
     on exit either way."""
     client = get_client()
-    await client.set(_rotating_key(login_id), "1", ex=_SHUT_TTL_SECONDS)
+    await client.set(_rotating_key(connection_id), "1", ex=_SHUT_TTL_SECONDS)
     try:
-        await client.zremrangebyscore(_users_key(login_id), "-inf", time.time())
-        yield not await client.zcard(_users_key(login_id))
+        await client.zremrangebyscore(_users_key(connection_id), "-inf", time.time())
+        yield not await client.zcard(_users_key(connection_id))
     finally:
-        await client.delete(_rotating_key(login_id))
+        await client.delete(_rotating_key(connection_id))
