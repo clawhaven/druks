@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-from druks.accounts.models import Account
 from fastapi.testclient import TestClient
 
 
@@ -22,8 +21,8 @@ def _stub_profile_start(monkeypatch):
 
     calls: list[dict] = []
 
-    async def _start(cls, *, subject, account_id=None, **input):
-        calls.append({"subject": subject, "account_id": account_id, **input})
+    async def _start(cls, *, subject, **input):
+        calls.append({"subject": subject, **input})
         return "fake-run-id"
 
     monkeypatch.setattr(Profile, "start", classmethod(_start))
@@ -39,11 +38,9 @@ def test_adding_a_repo_dispatches_a_profile_run(client: TestClient, monkeypatch)
         json={"fullName": "acme/widget"},
     ).json()
 
-    account = Account.get_for_email("op@example.com")
     assert calls == [
         {
             "subject": {"type": "project_repo", "id": repo["id"]},
-            "account_id": account.id,
             "repo_id": repo["id"],
         }
     ]
@@ -62,11 +59,9 @@ def test_profile_endpoint_dispatches(client: TestClient, monkeypatch):
     response = client.post(f"/api/build/projects/{project.id}/repos/{repo.id}/profile")
 
     assert response.status_code == 200
-    account = Account.get_for_email("op@example.com")
     assert calls == [
         {
             "subject": {"type": "project_repo", "id": repo.id},
-            "account_id": account.id,
             "repo_id": repo.id,
         }
     ]

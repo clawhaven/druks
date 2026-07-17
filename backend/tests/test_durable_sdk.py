@@ -295,6 +295,20 @@ async def test_attribution_rides_attributes_and_survives_resume(rt):
     assert "acct-after:acct-9" in SINK  # the resumer never becomes the payer
 
 
+async def test_browser_origin_start_inherits_the_ambient_account(rt):
+    # The session gate stamps the request's account into a contextvar;
+    # start() reads it when no explicit account_id is passed.
+    from druks.accounts.sessions import current_account_id
+
+    token = current_account_id.set("acct-ambient")
+    try:
+        wfid = await rt.RecordFeedback.start(subject=None, repo="owner/ambient")
+    finally:
+        current_account_id.reset(token)
+    await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FINISHED)
+    assert _state(rt.engine, wfid).account_id == "acct-ambient"
+
+
 async def test_duplicate_start_shares_the_run_across_accounts(rt):
     # Attribution is NEVER part of the dedup id: two accounts starting the same
     # subject share the one active run.

@@ -4,7 +4,6 @@ from croniter import croniter
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
-from druks.accounts.dependencies import CurrentAccountDep
 from druks.core.utils.time import operator_local_day
 from druks.db import db_session
 from druks.harnesses.artifacts import normalize_token_usage
@@ -62,9 +61,9 @@ async def get_usage() -> UsageResponse:
 
 
 @router.post("/refresh", status_code=status.HTTP_202_ACCEPTED)
-async def refresh_usage(account: CurrentAccountDep) -> None:
+async def refresh_usage() -> None:
     # Fire-and-forget: the frontend polls GET /api/usage for the new row.
-    await PollUsage.start(subject=None, account_id=account.id)
+    await PollUsage.start(subject=None)
 
 
 @router.get(

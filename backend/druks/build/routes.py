@@ -3,7 +3,6 @@ import logging
 from fastapi import APIRouter, Body, HTTPException, Query, Response, status
 from sqlalchemy import func, select, update
 
-from druks.accounts.dependencies import CurrentAccountDep
 from druks.build.models import Project, ProjectRepo, WorkItem, slugify
 from druks.build.schemas import (
     AddProjectRepoRequest,
@@ -155,7 +154,6 @@ async def delete_project(project_id: int) -> None:
 async def add_project_repo(
     project_id: int,
     body: AddProjectRepoRequest,
-    account: CurrentAccountDep,
 ) -> ProjectRepoSummary:
     project = Project.get(project_id)
     if not project:
@@ -180,9 +178,7 @@ async def add_project_repo(
         )
         .values(project_id=project.id)
     )
-    await Profile.start(
-        subject={"type": "project_repo", "id": repo.id}, account_id=account.id, repo_id=repo.id
-    )
+    await Profile.start(subject={"type": "project_repo", "id": repo.id}, repo_id=repo.id)
     return ProjectRepoSummary.from_repo(repo)
 
 
@@ -212,17 +208,13 @@ async def update_project_repo(
     response_model=ProjectRepoSummary,
     response_model_by_alias=True,
 )
-async def profile_project_repo(
-    project_id: int, repo_id: int, account: CurrentAccountDep
-) -> ProjectRepoSummary:
+async def profile_project_repo(project_id: int, repo_id: int) -> ProjectRepoSummary:
     row = ProjectRepo.get(repo_id)
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "repo not found")
     # Profile is subject-unique: start() returns the live run when one is already
     # active for this repo, so the route just dispatches and lets the lock dedup.
-    await Profile.start(
-        subject={"type": "project_repo", "id": repo_id}, account_id=account.id, repo_id=repo_id
-    )
+    await Profile.start(subject={"type": "project_repo", "id": repo_id}, repo_id=repo_id)
     return ProjectRepoSummary.from_repo(row)
 
 

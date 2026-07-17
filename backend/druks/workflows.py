@@ -19,6 +19,7 @@ from dbos._error import (
 from pydantic import BaseModel, ConfigDict, Field, create_model
 from uuid_utils import uuid7
 
+from druks.accounts.sessions import current_account_id
 from druks.durable.activity import get_run_phase, set_run_phase
 from druks.durable.engine import _step_engine, register_schedule, run_queue, step_session
 from druks.durable.enums import AgentCallStatus, RunState
@@ -642,6 +643,11 @@ class Workflow:
         # picks its connection for the run's agent calls; assignee_email is the
         # requested ticket assignee, kept for the fallback trail when it
         # resolved to no account.
+        if account_id is None:
+            # A browser-origin start inherits the request's signed-in account
+            # (the session gate stamps it); dispatchers that know better —
+            # ticket assignees — pass account_id explicitly.
+            account_id = current_account_id.get()
         if subject is not None:
             _Subject.model_validate(subject)  # raises on a bad shape (wrong/extra keys, types)
         if cls._run_input_model is None:
