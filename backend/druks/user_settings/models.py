@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import ForeignKey, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import String
 
 from druks.database import db_session
@@ -121,28 +121,6 @@ class HarnessSettings(Base):
             setattr(self, field, value)
         self.updated_at = Base.utc_now()
         db_session().flush()
-
-
-def seed_harnesses(engine) -> None:
-    # Called from init_db (the migrate step, where the scoped session isn't
-    # bound — hence the explicit engine). Give every registered harness a config
-    # row at its shipped defaults. Idempotent: a harness added later is seeded on
-    # the deploy that adds it; existing rows keep whatever the operator tuned.
-    from druks.harnesses.registry import get_harnesses
-
-    with Session(engine, autocommit=False) as session:
-        existing = set(session.execute(select(HarnessSettings.name)).scalars())
-        for harness in get_harnesses():
-            if harness.name not in existing:
-                session.add(
-                    HarnessSettings(
-                        name=harness.name,
-                        model=harness.default_model,
-                        effort=harness.default_effort,
-                        timeout=harness.default_timeout,
-                    )
-                )
-        session.commit()
 
 
 class SettingsOverride(Base):

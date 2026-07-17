@@ -87,7 +87,7 @@ def create_engine_from_url(database_url: str):
 
 
 def init_db(engine) -> None:
-    """Create any missing tables and seed the harness registry. Used by the
+    """Create any missing tables and run the first-start seeds. Used by the
     pytest fixture; production schema is owned by Alembic (``druks init-db``
     runs ``alembic upgrade head``). Idempotent."""
     # cycle: every models module imports db_session from here at module
@@ -99,10 +99,9 @@ def init_db(engine) -> None:
     import druks.notifications.models  # noqa: F401
     import druks.skills.models  # noqa: F401
     import druks.user_settings.models  # noqa: F401
-    from druks.accounts.models import seed_system_account
+    from druks.bootstrap import seed
     from druks.extensions.loader import import_extension_models
     from druks.models import Base
-    from druks.user_settings.models import seed_harnesses
 
     import_extension_models()
     # citext backs the case-insensitive email columns; create_all needs the
@@ -110,8 +109,7 @@ def init_db(engine) -> None:
     with engine.begin() as connection:
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS citext"))
     Base.metadata.create_all(engine)
-    seed_harnesses(engine)
-    seed_system_account(engine)
+    seed(engine)
 
 
 def get_session(engine) -> Session:

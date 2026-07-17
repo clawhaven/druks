@@ -55,7 +55,9 @@ class Run(Base):
     account_id: Mapped[str] = mapped_column(
         ForeignKey("accounts.id", ondelete="RESTRICT"), default=SYSTEM_ACCOUNT_ID
     )
-    account: Mapped[Account] = relationship(lazy="joined", foreign_keys=[account_id])
+    account: Mapped[Account] = relationship(
+        lazy="joined", innerjoin=True, foreign_keys=[account_id]
+    )
 
     # When the run last changed — the newest of creation, the parked ask, and
     # DBOS's status write.
@@ -234,7 +236,7 @@ class AgentCall(Base, Uuid7Pk):
     account_id: Mapped[str] = mapped_column(
         ForeignKey("accounts.id", ondelete="RESTRICT"), default=SYSTEM_ACCOUNT_ID
     )
-    account: Mapped[Account] = relationship(lazy="joined")
+    account: Mapped[Account] = relationship(lazy="joined", innerjoin=True)
 
     created_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     started_at: Mapped[datetime] = mapped_column(default=Base.utc_now)

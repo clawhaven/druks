@@ -5,7 +5,7 @@ from sqlalchemy.dialects.postgresql import CITEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
 from druks.core.models import Uuid7Pk
-from druks.database import db_session, get_session
+from druks.database import db_session
 from druks.models import Base
 
 SYSTEM_ACCOUNT_ID = "system"
@@ -41,11 +41,3 @@ class Account(Base, Uuid7Pk):
         session.add(account)
         session.flush()
         return account
-
-
-def seed_system_account(engine) -> None:
-    # Owns every run nobody asked for: crons, background work.
-    with get_session(engine) as session:
-        if not session.get(Account, SYSTEM_ACCOUNT_ID):
-            session.add(Account(id=SYSTEM_ACCOUNT_ID, email="system"))
-            session.commit()
