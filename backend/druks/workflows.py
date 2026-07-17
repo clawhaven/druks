@@ -83,9 +83,8 @@ current_workflow: ContextVar["Workflow"] = ContextVar("current_workflow")
 # step, so it skips wrapping itself; outside, it wraps itself in its own step.
 _in_step: ContextVar[bool] = ContextVar("_in_step", default=False)
 
-# Attribution rides the wire input under this key — reserved so _entry's
-# (subject, input) arity never changes and an old checkpoint without the key
-# replays untouched. A body parameter may not claim it.
+# Reserved so _entry's arity and old checkpoints stay untouched; a body
+# parameter may not claim it.
 _ACCOUNT_INPUT_KEY = "__account_id__"
 
 
@@ -476,9 +475,8 @@ class Workflow:
         # run()'s validated input bundle (the model synthesized from its signature),
         # set before run() — for templates and derived properties. None = no input.
         self.input: BaseModel | None = None
-        # The attributed account (who requested/triggered the run), replayed off
-        # the reserved input key — credential selection reads it per agent call.
-        # None on a run started without attribution (crons, old checkpoints).
+        # Who requested/triggered the run, replayed off the reserved input
+        # key; None on unattributed runs (crons, old checkpoints).
         self.account_id: str | None = None
         # Facts published with set_state, kept warm for sync reads (templates,
         # workspace kwargs); the durable copy is the run's DBOS events.
@@ -639,14 +637,9 @@ class Workflow:
         # shape fails at start, not inside the run.
         # subject is required (no default) so a run can't silently lose its
         # timeline by omission — pass subject=None explicitly for a background run.
-        # account_id attributes the run to the requesting/triggering account and
-        # picks its connection for the run's agent calls; assignee_email is the
-        # requested ticket assignee, kept for the fallback trail when it
-        # resolved to no account.
         if account_id is None:
-            # A browser-origin start inherits the request's signed-in account
-            # (the session gate stamps it); dispatchers that know better —
-            # ticket assignees — pass account_id explicitly.
+            # Browser-origin starts inherit the session gate's account;
+            # dispatchers that know better pass account_id explicitly.
             account_id = current_account_id.get()
         if subject is not None:
             _Subject.model_validate(subject)  # raises on a bad shape (wrong/extra keys, types)
@@ -673,8 +666,7 @@ class Workflow:
         # The workflow's routing metadata, stamped as DBOS custom attributes so
         # "runs for this subject" is answered by workflow_status itself. The
         # subject id is stamped as a string — the one shape every reader compares.
-        # Attribution rides here too (never the dedup id: different accounts
-        # starting the same subject must share the one active run).
+        # Attribution rides here too, never the dedup id.
         attributes = {}
         if subject:
             attributes = {"subject_type": subject["type"], "subject_id": str(subject["id"])}
@@ -740,8 +732,8 @@ async def _run_instance(
     instance = cls()
     instance._workflow_id = DBOS.workflow_id  # type: ignore[assignment]
     instance.subject = subject
-    # The reserved attribution key comes off first — it is platform routing,
-    # not body input, and an old checkpoint without it replays as account-less.
+    # Platform routing comes off before body validation; an old checkpoint
+    # without the key replays account-less.
     input = dict(input or {})
     instance.account_id = input.pop(_ACCOUNT_INPUT_KEY, None)
     # The body's input re-validates from its wire dict; a cron fires with no

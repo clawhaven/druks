@@ -56,9 +56,8 @@ class Run(Base):
     # fresh; an already-loaded instance keeps what it read until expired.
     # Read-only; an operator ends a run through cancel().
     state: Mapped[str] = column_property(state_expression(id, input_gate, created_at))
-    # The attributed account (who requested/triggered the run), read off the
-    # DBOS attributes stamped at start(); its email joined in for display.
-    # NULL reads legacy/unattributed.
+    # Who requested/triggered the run, off the DBOS attributes; the email
+    # joined in for display. NULL reads unattributed.
     account_id: Mapped[str | None] = column_property(account_id_expression(id))
     account_email: Mapped[str | None] = column_property(
         select(Account.email).where(Account.id == account_id_expression(id)).scalar_subquery()
@@ -233,17 +232,15 @@ class AgentCall(Base, Uuid7Pk):
     # Which agent (registry id: "scope", "implement", …) made this call — the
     # timeline's grouping label. Nullable — not every call is agent-attributed.
     agent: Mapped[str | None] = mapped_column(String, default=None)
-    # The account whose connection executed this call — the subscription
-    # actually charged, distinct from the run's attributed account when the
-    # call fell back. NULL on legacy calls; never guess historical attribution.
-    # Eager-joined so projections read the email without I/O.
+    # The subscription actually charged — differs from the run's account on
+    # fallback. NULL on legacy calls, never guessed. Eager-joined for
+    # I/O-free projection.
     account_id: Mapped[str | None] = mapped_column(
         ForeignKey("accounts.id", ondelete="RESTRICT"), default=None
     )
     account: Mapped[Account | None] = relationship(lazy="joined")
-    # Why the fallback account was charged instead of the run's own:
-    # missing_assignee / unmatched_assignee / account_not_connected /
-    # unattributed. NULL when the run's own account executed.
+    # missing_assignee / unmatched_assignee / account_not_connected; None
+    # when the run's own account ran.
     fallback_reason: Mapped[str | None] = mapped_column(String, default=None)
     created_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     started_at: Mapped[datetime] = mapped_column(default=Base.utc_now)

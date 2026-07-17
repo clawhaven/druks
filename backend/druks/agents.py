@@ -162,10 +162,8 @@ class Agent:
         model = self.get_model_name()
         harness = get_harness_for_model(model)
         workflow = current_workflow.get()
-        # Selection is the connected-harness preflight: the attributed
-        # account's own connection, else the fallback account's with the
-        # reason recorded. Refusing here, with the fix in the message, beats
-        # provisioning a VM and 401ing mid-run.
+        # Refusing an unservable call here beats provisioning a VM and
+        # 401ing mid-run.
         attributes = get_run_attributes(workflow_id)
         login, fallback_reason = HarnessConnection.select_for_run(
             harness.name,
@@ -175,8 +173,7 @@ class Agent:
         # Plain snapshots: the commits below expire the ORM row mid-flight.
         connection_id, charged_account_id = login.id, login.account_id
         if fallback_reason:
-            # The visible exception beside the moving automation — the nudge
-            # that a call charged the fallback account, and why.
+            # The visible nudge: this call charged the fallback account.
             Event.emit(
                 type="credential.fallback",
                 subject=workflow.subject,
@@ -198,8 +195,8 @@ class Agent:
         engine = _step_engine()
         call_id = harness.mint_run_id(None)
 
-        # The call is an active user of its login from provisioning through
-        # execution: that login's rotation waits for it; other logins' don't.
+        # Registered for provisioning through execution — this connection's
+        # rotation defers around it.
         async with sandbox_gate.use(connection_id, call_id):
             host_id = await workflow._ensure_host()
             await set_run_phase("provisioning_vm")

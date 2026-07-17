@@ -35,9 +35,8 @@ class AgentCallResponse(BaseResponse):
     # Which agent made this call ("scope", "implement") — the timeline's row label.
     agent: str | None = None
     label: str = ""
-    # The account charged for this call, and why it wasn't the run's own when
-    # it fell back. Both None on legacy calls recorded before attribution
-    # existed — the client renders those as legacy/unknown, never the viewer.
+    # The account charged, and why it wasn't the run's own on fallback; None
+    # renders unattributed, never the viewer.
     account_email: str | None = None
     fallback_reason: str | None = None
     status: Literal["running", "succeeded", "failed", "abandoned"]
@@ -147,8 +146,8 @@ class RunResponse(BaseResponse):
     input_request: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
-    # The attributed account (who requested/triggered the run) — None on runs
-    # from before attribution existed: legacy, never the current viewer.
+    # Who requested/triggered the run; None renders unattributed, never the
+    # viewer.
     account_email: str | None = None
     agent_calls: list[AgentCallResponse] = Field(default_factory=list)
 

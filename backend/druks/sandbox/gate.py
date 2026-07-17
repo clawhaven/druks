@@ -7,13 +7,9 @@ from druks.redis import get_client
 
 from .constants import MAX_AGENT_TIMEOUT_SECONDS
 
-# One gate per credential: a rotation runs only while its login has no
-# active agent calls — a busy login defers to the next tick (the refresh
-# margin dwarfs the call horizon) — and every other login keeps provisioning
-# and running throughout. Active users live in a sorted set scored by their
-# expiry (capped at the agent horizon), so a crashed caller ages out instead
-# of deferring rotation forever. Idle warm VMs never block a rotation — every
-# invocation rewrites credentials fresh.
+# One gate per credential: rotation runs only while its connection is idle
+# (busy defers to the next tick); other connections never block. Active calls
+# register in a zset scored by expiry, so a crashed caller ages out.
 _RUN_HORIZON = MAX_AGENT_TIMEOUT_SECONDS  # a sandbox run never outlives this; caps every wait
 _POLL = 2.0
 # The gate is only shut for the seconds a refresh takes; a short TTL means a
@@ -31,10 +27,7 @@ def _users_key(connection_id: str) -> str:
 
 @asynccontextmanager
 async def use(connection_id: str, call_id: str) -> AsyncIterator[None]:
-    """Register one agent call as an active user of its login, provisioning
-    through execution. Registration re-checks the rotating flag after adding
-    itself and backs out if it appeared — the flag may land between the check
-    and the add, and staying registered would deadlock that rotation."""
+    """Register the call as an active user of its connection for its span."""
     client = get_client()
     while True:
         waited = 0.0
@@ -42,6 +35,8 @@ async def use(connection_id: str, call_id: str) -> AsyncIterator[None]:
             await asyncio.sleep(_POLL)
             waited += _POLL
         await client.zadd(_users_key(connection_id), {call_id: time.time() + _RUN_HORIZON})
+        # A flag landing between the wait and the add must not race the
+        # rotation: back out and re-wait.
         if not await client.exists(_rotating_key(connection_id)):
             break
         await client.zrem(_users_key(connection_id), call_id)
@@ -53,11 +48,8 @@ async def use(connection_id: str, call_id: str) -> AsyncIterator[None]:
 
 @asynccontextmanager
 async def shut(connection_id: str) -> AsyncIterator[bool]:
-    """Shut one login's gate and say whether it is idle: True means no active
-    calls — rotate now; False means calls are running — defer, the next tick
-    retries well inside the refresh margin. Expired registrations are pruned
-    first so a crashed caller never defers rotation forever. The gate reopens
-    on exit either way."""
+    """Shut the connection's gate; yield True when idle — rotate now — else
+    defer to the next tick. Reopens on exit either way."""
     client = get_client()
     await client.set(_rotating_key(connection_id), "1", ex=_SHUT_TTL_SECONDS)
     try:

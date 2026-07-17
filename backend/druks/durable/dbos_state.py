@@ -91,8 +91,7 @@ def state_expression(
 
 
 def get_run_attributes(run_id: str) -> dict[str, Any]:
-    """The attributes stamped at start() for one run — subject keys,
-    attribution, the requested assignee. Empty for a run with none."""
+    """The attributes stamped at start(); empty for a run with none."""
     value = (
         db_session()
         .execute(
@@ -104,8 +103,7 @@ def get_run_attributes(run_id: str) -> dict[str, Any]:
 
 
 def account_id_expression(run_id: sa.ColumnElement) -> sa.ColumnElement:
-    # The account the run was started for — a DBOS attribute like the subject
-    # keys, never a durable_runs column. NULL for legacy and actor-less runs.
+    # A DBOS attribute like the subject keys, never a durable_runs column.
     return (
         sa.select(workflow_status.c.attributes["account_id"].as_string())
         .where(workflow_status.c.workflow_uuid == run_id)

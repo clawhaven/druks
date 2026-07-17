@@ -40,12 +40,9 @@ class HarnessConnection(Base, Uuid7Pk):
     def select_for_run(
         cls, harness: str, account_id: str | None, *, assignee_email: str | None
     ) -> tuple["HarnessConnection", str | None]:
-        """The connection an agent call executes with, and why it fell back
-        (or None): the attributed account's own connection wins; otherwise the
-        fallback account's carries the call — fallback-with-visible-exception
-        keeps automation moving instead of wedging every unmatched webhook.
-        Raises :class:`HarnessNotConnectedError` when no connection can serve
-        at all."""
+        """The connection a call runs with, and why it fell back (None = the
+        account's own): the fallback carries unmatched work so automation
+        keeps moving."""
         if account_id:
             own = cls.get_for_account(harness, account_id)
             if own:
