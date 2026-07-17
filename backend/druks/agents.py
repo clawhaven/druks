@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict
 
 from druks.database import db_session
 from druks.durable.activity import set_run_phase
-from druks.durable.dbos_state import get_run_attributes
 from druks.durable.engine import _step_engine, step_session
 from druks.durable.enums import AgentCallStatus
 from druks.durable.exceptions import WorkflowError
@@ -164,25 +163,15 @@ class Agent:
         workflow = current_workflow.get()
         # Refusing an unservable call here beats provisioning a VM and
         # 401ing mid-run.
-        attributes = get_run_attributes(workflow_id)
-        login, fallback_reason = HarnessConnection.select_for_run(
-            harness.name,
-            workflow.account_id,
-            assignee_email=attributes.get("assignee_email"),
-        )
+        connection = HarnessConnection.select_for_run(harness.name, workflow.account_id)
         # Plain snapshots: the commits below expire the ORM row mid-flight.
-        connection_id, charged_account_id = login.id, login.account_id
-        if fallback_reason:
+        connection_id, charged_account_id = connection.id, connection.account_id
+        if charged_account_id != workflow.account_id:
             # The visible nudge: this call charged the fallback account.
             Event.emit(
                 type="credential.fallback",
                 subject=workflow.subject,
-                payload={
-                    "run_id": workflow_id,
-                    "harness": harness.name,
-                    "reason": fallback_reason,
-                    "assignee_email": attributes.get("assignee_email"),
-                },
+                payload={"run_id": workflow_id, "harness": harness.name},
                 extension=type(workflow).extension,
             )
         # An agent call is a durability boundary — its effects don't roll back —
@@ -222,7 +211,6 @@ class Agent:
                     agent=self.id,
                     host_id=runner.host_id,
                     account_id=charged_account_id,
-                    fallback_reason=fallback_reason,
                 )
                 try:
                     result = await self._execute(

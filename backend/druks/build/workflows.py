@@ -146,13 +146,11 @@ class BuildWorkflow(Workflow):
         item = WorkItem.get(work_item_id)
         if not item:
             raise ValueError(f"dispatching a build for unknown work item {work_item_id}")
-        # The run is attributed to the ticket assignee's account (their
-        # connection runs the calls); the owner fields stay workflow input.
-        account_id, stripped_assignee = Account.resolve_assignee(assignee_email)
+        # The assignee's account runs the calls; the owner fields stay input.
+        assignee = Account.get_for_email(assignee_email.strip()) if assignee_email else None
         run_id = await cls.start(
             subject=WorkItem.subject_for(item.id),
-            account_id=account_id,
-            assignee_email=stripped_assignee,
+            account_id=assignee.id if assignee else None,
             repo=item.repo,
             source=item.source,
             ticket_ref=item.remote_key,

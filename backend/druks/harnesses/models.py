@@ -37,27 +37,21 @@ class HarnessConnection(Base, Uuid7Pk):
         return db_session().get(cls, login_id)
 
     @classmethod
-    def select_for_run(
-        cls, harness: str, account_id: str | None, *, assignee_email: str | None
-    ) -> tuple["HarnessConnection", str | None]:
-        """The connection a call runs with, and why it fell back (None = the
-        account's own): the fallback carries unmatched work so automation
-        keeps moving."""
+    def select_for_run(cls, harness: str, account_id: str | None) -> "HarnessConnection":
+        """The connection a call runs with: the account's own, else the
+        fallback account's — which carries unmatched work so automation keeps
+        moving."""
         if account_id:
             own = cls.get_for_account(harness, account_id)
             if own:
-                return own, None
+                return own
         fallback = cls.get_for_account(harness, fallback=True)
-        if not fallback:
-            raise HarnessNotConnectedError(
-                f"{harness} is not connected for the fallback account — connect it in "
-                "Settings → Harnesses."
-            )
-        if account_id:
-            return fallback, "account_not_connected"
-        if assignee_email:
-            return fallback, "unmatched_assignee"
-        return fallback, "missing_assignee"
+        if fallback:
+            return fallback
+        raise HarnessNotConnectedError(
+            f"{harness} is not connected for the fallback account — connect it in "
+            "Settings → Harnesses."
+        )
 
     @classmethod
     def get_for_account(

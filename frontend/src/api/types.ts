@@ -64,8 +64,6 @@ export interface AgentCallSummary {
   label: string
   /** The account charged for this call; null = legacy/unattributed, never the viewer. */
   accountEmail?: string | null
-  /** Set when the call fell back to the fallback account's connection, and why. */
-  fallbackReason?: string | null
   status: 'running' | 'succeeded' | 'failed' | 'abandoned'
   startedAt: string
   finishedAt?: string | null

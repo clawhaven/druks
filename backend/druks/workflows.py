@@ -372,6 +372,7 @@ async def _execute_run(
     workflow_id: str,
     kind: str,
     subject: dict[str, Any] | None,
+    account_id: str | None,
     body: Callable,
 ) -> Any:
     # Ensure the row (idempotent, so a scheduled run with no start() makes it
@@ -379,7 +380,7 @@ async def _execute_run(
     # Every failure re-raises so DBOS records the terminal ERROR derived state
     # reads; an operator cancel already carries its own reason and terminal
     # status, so it passes through untouched.
-    Run.create_row(_step_engine(), workflow_id=workflow_id, kind=kind)
+    Run.create_row(_step_engine(), workflow_id=workflow_id, kind=kind, account_id=account_id)
     await _emit_run_event(workflow_id, RunState.RUNNING, subject=subject)
     try:
         result = await body()
@@ -455,7 +456,7 @@ class Workflow:
         # Before _wrap_steps: run()'s wrapper signature is (*args, **kwargs).
         cls._run_input_model = _input_model_from_signature(cls)
         if cls._run_input_model:
-            claimed = {"account_id", "assignee_email"} & set(cls._run_input_model.model_fields)
+            claimed = {"account_id"} & set(cls._run_input_model.model_fields)
             if claimed:
                 raise WorkflowError(
                     f"{cls.__name__}.{cls._body_method}() declares reserved start() "
@@ -624,7 +625,6 @@ class Workflow:
         *,
         subject: dict[str, Any] | None,
         account_id: str | None = None,
-        assignee_email: str | None = None,
         **input: Any,
     ) -> str:
         # Mint the id, write the projection row, enqueue the body. Returns the
@@ -666,18 +666,13 @@ class Workflow:
         # The workflow's routing metadata, stamped as DBOS custom attributes so
         # "runs for this subject" is answered by workflow_status itself. The
         # subject id is stamped as a string — the one shape every reader compares.
-        # Attribution rides here too, never the dedup id.
-        attributes = {}
+        attributes = None
         if subject:
             attributes = {"subject_type": subject["type"], "subject_id": str(subject["id"])}
-        if account_id:
-            attributes["account_id"] = account_id
-        if assignee_email:
-            attributes["assignee_email"] = assignee_email
         try:
             with (
                 SetWorkflowID(workflow_id),
-                SetWorkflowAttributes(attributes or None),
+                SetWorkflowAttributes(attributes),
                 enqueue_options,
             ):
                 await run_queue.enqueue_async(cls._entry, subject, wire)
@@ -689,12 +684,12 @@ class Workflow:
                 return holder
             # The holder reached terminal between the rejection and the lookup —
             # the slot is free now, so this start goes through.
-            return await cls.start(
-                subject=subject, account_id=account_id, assignee_email=assignee_email, **input
-            )
+            return await cls.start(subject=subject, account_id=account_id, **input)
         # The body also creates its row (idempotently) — this one just makes it
         # visible before an executor picks the workflow up.
-        Run.create_row(_step_engine(), workflow_id=workflow_id, kind=cls.kind)
+        Run.create_row(
+            _step_engine(), workflow_id=workflow_id, kind=cls.kind, account_id=account_id
+        )
         return workflow_id
 
 
@@ -750,6 +745,7 @@ async def _run_instance(
             instance._workflow_id,
             cls.kind,
             subject,
+            instance.account_id,
             lambda: getattr(instance, cls._body_method)(**run_kwargs),
         )
     finally:

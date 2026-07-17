@@ -30,19 +30,6 @@ class Account(Base, Uuid7Pk):
         return db_session().scalar(select(cls).where(cls.email == email))
 
     @classmethod
-    def resolve_assignee(cls, email: str | None) -> tuple[str | None, str | None]:
-        """(account id, stripped email) for a ticket assignee — the id is None
-        when no account carries that identity (citext matches the case), both
-        None when the ticket has no assignee at all."""
-        if not email:
-            return None, None
-        stripped = email.strip()
-        account = cls.get_for_email(stripped)
-        if account:
-            return account.id, stripped
-        return None, stripped
-
-    @classmethod
     def get_or_create(cls, email: str) -> "Account":
         account = cls.get_for_email(email)
         if account:

@@ -45,11 +45,12 @@ class Scope(Workflow):
                 remote_url=ticket.url,
                 repo=target.full_name,
             )
-        account_id, stripped_assignee = Account.resolve_assignee(ticket.assignee_email)
+        assignee = None
+        if ticket.assignee_email:
+            assignee = Account.get_for_email(ticket.assignee_email.strip())
         return await cls.start(
             subject=WorkItem.subject_for(item.id),
-            account_id=account_id,
-            assignee_email=stripped_assignee,
+            account_id=assignee.id if assignee else None,
             remote_key=ticket.key,
             source=ticket.provider,
         )

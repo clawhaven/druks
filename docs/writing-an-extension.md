@@ -139,14 +139,12 @@ needs lookup, snapshot, or routing policy before launch.
 A browser-origin start attributes itself: the session gate stamps the
 request's signed-in account, and `start()` inherits it — a route that starts a
 workflow needs no ceremony. Pass `account_id` only when the dispatcher knows
-better: a webhook dispatch resolves the ticket assignee
-(`Account.resolve_assignee`, whose email also rides `assignee_email=` for the
-fallback trail). Each of the run's agent calls then executes with that
-account's own connection, falling back to the install's fallback account with
-the reason recorded on the call. Runs with no account anywhere (crons,
-background work) read as unattributed and use the fallback connection.
-Resuming a parked run keeps its original attribution; the person clicking
-Resume never becomes the payer.
+better (a webhook dispatch resolving the ticket assignee). Each agent call
+executes with the run's account's own connection, else the install's fallback
+account — the charged account is recorded on the call, so a fallback is
+visible by comparison. Runs with no account anywhere (crons, background work)
+read as unattributed. Resuming a parked run keeps its original attribution;
+the person clicking Resume never becomes the payer.
 
 ### Schedules and settings
 

@@ -411,9 +411,7 @@ def connect_harness(harness_cls, payload: dict, *, provider_email: str = "op@exa
     )
 
 
-def seed_dbos_status(
-    session, workflow_id: str, state: str, *, subject=None, account_id=None
-) -> None:
+def seed_dbos_status(session, workflow_id: str, state: str, *, subject=None) -> None:
     """Write the ``dbos.workflow_status`` row a Run's derived ``state`` reads,
     carrying the subject attributes ``start()`` stamps — the paired half of
     every persisted run seed (there is no state column)."""
@@ -429,12 +427,9 @@ def seed_dbos_status(
         "cancelled": "CANCELLED",
     }[state]
     now_ms = int(Base.utc_now().timestamp() * 1000)
-    attributes = {}
+    attributes = None
     if subject:
         attributes = {"subject_type": subject["type"], "subject_id": str(subject["id"])}
-    if account_id:
-        attributes["account_id"] = account_id
-    attributes = attributes or None
     # created_at / priority carry server defaults in the dbos schema; the
     # derivation and subject keying read only these.
     session.execute(
@@ -545,11 +540,11 @@ def seed_agent_run(
     return call
 
 
-def seed_run(session, run_id, *, kind="build.build_workflow"):
+def seed_run(session, run_id, *, kind="build.build_workflow", account_id=None):
     # A bare durable_runs row so an AgentCall / Artifact FK to it resolves.
     from druks.durable import Run
 
-    run = Run(id=run_id, kind=kind)
+    run = Run(id=run_id, kind=kind, account_id=account_id)
     session.add(run)
     session.flush()
     return run

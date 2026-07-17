@@ -35,10 +35,8 @@ class AgentCallResponse(BaseResponse):
     # Which agent made this call ("scope", "implement") — the timeline's row label.
     agent: str | None = None
     label: str = ""
-    # The account charged, and why it wasn't the run's own on fallback; None
-    # renders unattributed, never the viewer.
+    # The account charged; None renders unattributed, never the viewer.
     account_email: str | None = None
-    fallback_reason: str | None = None
     status: Literal["running", "succeeded", "failed", "abandoned"]
     # started_at + finished_at are the facts; the client derives elapsed (a live
     # tick off started_at while running), so nothing here churns between polls.
@@ -64,7 +62,6 @@ class AgentCallResponse(BaseResponse):
             agent=call.agent,
             label=get_display_label(call.agent) if call.agent else "Agent",
             account_email=call.account.email if call.account else None,
-            fallback_reason=call.fallback_reason,
             status=status,  # type: ignore[arg-type]
             started_at=call.started_at,
             finished_at=call.finished_at,
@@ -162,7 +159,7 @@ class RunResponse(BaseResponse):
             input_request=run.get_ask() if run.input_request else None,
             created_at=run.created_at,
             updated_at=run.updated_at,
-            account_email=run.account_email,
+            account_email=run.account.email if run.account else None,
             agent_calls=[AgentCallResponse.from_call(c) for c in calls],
         )
 

@@ -102,7 +102,6 @@ async def test_transition_scopes_an_unlabeled_ticket(db_session, _stub_enqueue):
     assert _stub_enqueue[0] == {
         "subject": _stub_enqueue[0]["subject"],
         "account_id": None,
-        "assignee_email": None,
         "remote_key": "ACME-9",
         "source": "linear",
     }

@@ -1,4 +1,4 @@
-"""attribute agent calls to accounts
+"""attribute runs and agent calls to accounts
 
 Revision ID: c6d7e8f9a0b1
 Revises: b5c6d7e8f9a0
@@ -19,9 +19,17 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Existing calls stay NULL — legacy/unattributed, never guessed.
+    # Existing rows stay NULL — unattributed, never guessed.
+    op.add_column("durable_runs", sa.Column("account_id", sa.String(), nullable=True))
+    op.create_foreign_key(
+        "durable_runs_account_id_fkey",
+        "durable_runs",
+        "accounts",
+        ["account_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
     op.add_column("agent_calls", sa.Column("account_id", sa.String(), nullable=True))
-    op.add_column("agent_calls", sa.Column("fallback_reason", sa.String(), nullable=True))
     op.create_foreign_key(
         "agent_calls_account_id_fkey",
         "agent_calls",
@@ -38,5 +46,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("agent_calls_account_finished_idx", table_name="agent_calls")
     op.drop_constraint("agent_calls_account_id_fkey", "agent_calls", type_="foreignkey")
-    op.drop_column("agent_calls", "fallback_reason")
     op.drop_column("agent_calls", "account_id")
+    op.drop_constraint("durable_runs_account_id_fkey", "durable_runs", type_="foreignkey")
+    op.drop_column("durable_runs", "account_id")

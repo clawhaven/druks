@@ -411,6 +411,7 @@ function RunRow({
           <CallRow
             key={call.id}
             call={call}
+            runAccountEmail={run.accountEmail ?? null}
             selected={selectedHere && selection?.call?.id === call.id}
             onSelect={() => onSelect(call.id)}
           />
@@ -421,10 +422,12 @@ function RunRow({
 
 function CallRow({
   call,
+  runAccountEmail,
   selected,
   onSelect,
 }: {
   call: AgentCallSummary
+  runAccountEmail: string | null
   selected: boolean
   onSelect: () => void
 }) {
@@ -435,11 +438,8 @@ function CallRow({
         {CALL_GLYPH[call.status] ?? '·'}
       </span>
       <span className="wic-call-label">{call.label}</span>
-      {call.fallbackReason && (
-        <span
-          className="wic-call-fallback"
-          title={`Charged to the fallback account${call.accountEmail ? ` (${call.accountEmail})` : ''}: ${call.fallbackReason.replaceAll('_', ' ')}.`}
-        >
+      {call.accountEmail && call.accountEmail !== runAccountEmail && (
+        <span className="wic-call-fallback" title={`Charged to ${call.accountEmail}.`}>
           fallback
         </span>
       )}

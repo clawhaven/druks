@@ -264,35 +264,28 @@ def _account_id(engine, email: str) -> str:
         session.close()
 
 
-async def test_attribution_rides_attributes_and_survives_resume(rt):
-    """start(account_id=…) stamps the attribution as DBOS attributes (the run
-    read-side derives from them; no durable_runs column), carries it to the
-    body on a reserved input key, and a resume never swaps the payer."""
+async def test_attribution_rides_the_run_and_survives_resume(rt):
+    """start(account_id=…) lands on the durable_runs row and the reserved
+    input key; attributes stay subject-only; a resume never swaps the payer."""
     from druks.durable.dbos_state import workflow_status
 
     SINK.clear()
+    account_id = _account_id(rt.engine, "op@example.com")
     wfid = await rt.AttributedFlow.start(
-        subject={"type": "widget", "id": 878787},
-        account_id="acct-9",
-        assignee_email="dev@corp.com",
+        subject={"type": "widget", "id": 878787}, account_id=account_id
     )
     parked = await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.PENDING_INPUT)
     with rt.engine.connect() as conn:
         attributes = conn.execute(
             select(workflow_status.c.attributes).where(workflow_status.c.workflow_uuid == wfid)
         ).scalar_one()
-    assert attributes == {
-        "subject_type": "widget",
-        "subject_id": "878787",
-        "account_id": "acct-9",
-        "assignee_email": "dev@corp.com",
-    }
-    assert parked.account_id == "acct-9"  # the column_property off the attributes
-    assert "acct-before:acct-9" in SINK
+    assert attributes == {"subject_type": "widget", "subject_id": "878787"}
+    assert parked.account_id == account_id
+    assert f"acct-before:{account_id}" in SINK
 
     await parked.resume(action="go")
     await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FINISHED)
-    assert "acct-after:acct-9" in SINK  # the resumer never becomes the payer
+    assert f"acct-after:{account_id}" in SINK  # the resumer never becomes the payer
 
 
 async def test_browser_origin_start_inherits_the_ambient_account(rt):
@@ -300,23 +293,26 @@ async def test_browser_origin_start_inherits_the_ambient_account(rt):
     # start() reads it when no explicit account_id is passed.
     from druks.accounts.sessions import current_account_id
 
-    token = current_account_id.set("acct-ambient")
+    account_id = _account_id(rt.engine, "ambient@example.com")
+    token = current_account_id.set(account_id)
     try:
         wfid = await rt.RecordFeedback.start(subject=None, repo="owner/ambient")
     finally:
         current_account_id.reset(token)
     await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FINISHED)
-    assert _state(rt.engine, wfid).account_id == "acct-ambient"
+    assert _state(rt.engine, wfid).account_id == account_id
 
 
 async def test_duplicate_start_shares_the_run_across_accounts(rt):
     # Attribution is NEVER part of the dedup id: two accounts starting the same
     # subject share the one active run.
+    first = _account_id(rt.engine, "op@example.com")
+    second = _account_id(rt.engine, "peer@example.com")
     subject = {"type": "widget", "id": 909090}
-    wfid = await rt.SampleFlow.start(subject=subject, account_id="acct-a", repo="owner/app")
+    wfid = await rt.SampleFlow.start(subject=subject, account_id=first, repo="owner/app")
     parked = await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.PENDING_INPUT)
 
-    dup = await rt.SampleFlow.start(subject=subject, account_id="acct-b", repo="owner/app")
+    dup = await rt.SampleFlow.start(subject=subject, account_id=second, repo="owner/app")
     assert dup == wfid
 
     await parked.resume(action="merge")
@@ -494,10 +490,9 @@ async def test_run_agent_step(rt, monkeypatch):
         session.close()
     # The call is recorded under the orchestrator-minted id threaded to run_agent.
     assert recorded[0].id == seen[0]["call_id"]
-    # No account on the start: the fallback account (the module's op@ seed) is
-    # charged and the reason recorded.
+    # No account on the start: the fallback account (the module's op@ seed)
+    # is charged.
     assert recorded[0].account_id == _account_id(rt.engine, "op@example.com")
-    assert recorded[0].fallback_reason == "missing_assignee"
     assert pinned == [0]  # connection released while the agent runs
 
 

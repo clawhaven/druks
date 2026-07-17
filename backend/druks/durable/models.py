@@ -12,12 +12,7 @@ from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 from druks.accounts.models import Account
 from druks.core.models import Uuid7Pk
 from druks.database import db_session, get_session
-from druks.durable.dbos_state import (
-    account_id_expression,
-    state_expression,
-    subject_filter,
-    updated_at_expression,
-)
+from druks.durable.dbos_state import state_expression, subject_filter, updated_at_expression
 from druks.durable.enums import ACTIVE_STATES
 from druks.harnesses.artifacts import normalize_token_usage
 from druks.models import Base
@@ -56,12 +51,12 @@ class Run(Base):
     # fresh; an already-loaded instance keeps what it read until expired.
     # Read-only; an operator ends a run through cancel().
     state: Mapped[str] = column_property(state_expression(id, input_gate, created_at))
-    # Who requested/triggered the run, off the DBOS attributes; the email
-    # joined in for display. NULL reads unattributed.
-    account_id: Mapped[str | None] = column_property(account_id_expression(id))
-    account_email: Mapped[str | None] = column_property(
-        select(Account.email).where(Account.id == account_id_expression(id)).scalar_subquery()
+    # Who requested/triggered the run; NULL reads unattributed. Eager-joined
+    # for I/O-free projection.
+    account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), default=None
     )
+    account: Mapped[Account | None] = relationship(lazy="joined", foreign_keys=[account_id])
     # When the run last changed — the newest of creation, the parked ask, and
     # DBOS's status write.
     updated_at: Mapped[datetime] = column_property(
@@ -73,14 +68,16 @@ class Run(Base):
         return self.state in {s.value for s in ACTIVE_STATES}
 
     @classmethod
-    def create_row(cls, engine, *, workflow_id: str, kind: str) -> None:
+    def create_row(cls, engine, *, workflow_id: str, kind: str, account_id: str | None) -> None:
         # Own committed transaction (not the caller's request txn) so the row
         # exists before the running workflow's first lifecycle event. Idempotent:
         # a scheduled run creates its row inside the (replayable) body, and a
         # start that races its own retry must not double-insert.
         with get_session(engine) as session:
             session.execute(
-                pg_insert(cls).values(id=workflow_id, kind=kind).on_conflict_do_nothing()
+                pg_insert(cls)
+                .values(id=workflow_id, kind=kind, account_id=account_id)
+                .on_conflict_do_nothing()
             )
             session.commit()
 
@@ -239,9 +236,6 @@ class AgentCall(Base, Uuid7Pk):
         ForeignKey("accounts.id", ondelete="RESTRICT"), default=None
     )
     account: Mapped[Account | None] = relationship(lazy="joined")
-    # missing_assignee / unmatched_assignee / account_not_connected; None
-    # when the run's own account ran.
-    fallback_reason: Mapped[str | None] = mapped_column(String, default=None)
     created_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     started_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     status: Mapped[str] = mapped_column(default=AgentCallStatus.RUNNING.value)
@@ -301,7 +295,6 @@ class AgentCall(Base, Uuid7Pk):
         agent: str | None,
         host_id: str,
         account_id: str | None = None,
-        fallback_reason: str | None = None,
     ) -> None:
         # Recorded RUNNING once the agent starts on its host (id = its on-disk
         # transcript dir) in its own committed transaction, so the live step
@@ -325,7 +318,6 @@ class AgentCall(Base, Uuid7Pk):
                     model=model,
                     sandbox_host_id=host_id,
                     account_id=account_id,
-                    fallback_reason=fallback_reason,
                 )
             )
             session.commit()
