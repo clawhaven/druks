@@ -123,6 +123,14 @@ def _build_units():
         async def run_multistep(self) -> None:
             await self.review()
 
+    class AttributedFlow(Workflow):
+        # Records the attributed account before and after a park — resume must
+        # never swap the payer.
+        async def run_multistep(self) -> None:
+            SINK.append(f"acct-before:{self.account_id}")
+            await Approve.wait()
+            SINK.append(f"acct-after:{self.account_id}")
+
     return (
         SampleFlow,
         AgentFlow,
@@ -131,6 +139,7 @@ def _build_units():
         DoubleGateFlow,
         ConfirmFlow,
         ReviewFlow,
+        AttributedFlow,
     )
 
 
@@ -184,6 +193,7 @@ def rt():
         double_gate_flow,
         confirm_flow,
         review_flow,
+        attributed_flow,
     ) = _build_units()
     os.environ["DRUKS_DATABASE_URL"] = URL
     init_dbos()
@@ -198,6 +208,7 @@ def rt():
             DoubleGateFlow=double_gate_flow,
             ConfirmFlow=confirm_flow,
             ReviewFlow=review_flow,
+            AttributedFlow=attributed_flow,
         )
     finally:
         shutdown()
@@ -213,6 +224,7 @@ def rt():
         workflows._items.pop("double_gate_flow", None)
         workflows._items.pop("confirm_flow", None)
         workflows._items.pop("review_flow", None)
+        workflows._items.pop("attributed_flow", None)
         if db_url_snap is None:
             os.environ.pop("DRUKS_DATABASE_URL", None)
         else:
@@ -235,6 +247,76 @@ async def _wait_for(engine, workflow_id, predicate, timeout=15.0):
             return row
         await asyncio.sleep(0.1)
     raise AssertionError(f"timed out; last={_state(engine, workflow_id)}")
+
+
+def _account_id(engine, email: str) -> str:
+    from druks.accounts.models import Account
+
+    session = get_session(engine)
+    try:
+        row = session.execute(select(Account).where(Account.email == email)).scalar_one_or_none()
+        if not row:
+            row = Account(email=email)
+            session.add(row)
+            session.commit()
+        return row.id
+    finally:
+        session.close()
+
+
+async def test_attribution_rides_the_run_and_survives_resume(rt):
+    """start(account_id=…) lands on the durable_runs row and the reserved
+    input key; attributes stay subject-only; a resume never swaps the payer."""
+    from druks.durable.dbos_state import workflow_status
+
+    SINK.clear()
+    account_id = _account_id(rt.engine, "op@example.com")
+    wfid = await rt.AttributedFlow.start(
+        subject={"type": "widget", "id": 878787}, account_id=account_id
+    )
+    parked = await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.PENDING_INPUT)
+    with rt.engine.connect() as conn:
+        attributes = conn.execute(
+            select(workflow_status.c.attributes).where(workflow_status.c.workflow_uuid == wfid)
+        ).scalar_one()
+    assert attributes == {"subject_type": "widget", "subject_id": "878787"}
+    assert parked.account_id == account_id
+    assert f"acct-before:{account_id}" in SINK
+
+    await parked.resume(action="go")
+    await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FINISHED)
+    assert f"acct-after:{account_id}" in SINK  # the resumer never becomes the payer
+
+
+async def test_browser_origin_start_inherits_the_ambient_account(rt):
+    # The session gate stamps the request's account into a contextvar;
+    # start() reads it when no explicit account_id is passed.
+    from druks.accounts.sessions import current_account_id
+
+    account_id = _account_id(rt.engine, "ambient@example.com")
+    token = current_account_id.set(account_id)
+    try:
+        wfid = await rt.RecordFeedback.start(subject=None, repo="owner/ambient")
+    finally:
+        current_account_id.reset(token)
+    await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FINISHED)
+    assert _state(rt.engine, wfid).account_id == account_id
+
+
+async def test_duplicate_start_shares_the_run_across_accounts(rt):
+    # Attribution is NEVER part of the dedup id: two accounts starting the same
+    # subject share the one active run.
+    first = _account_id(rt.engine, "op@example.com")
+    second = _account_id(rt.engine, "peer@example.com")
+    subject = {"type": "widget", "id": 909090}
+    wfid = await rt.SampleFlow.start(subject=subject, account_id=first, repo="owner/app")
+    parked = await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.PENDING_INPUT)
+
+    dup = await rt.SampleFlow.start(subject=subject, account_id=second, repo="owner/app")
+    assert dup == wfid
+
+    await parked.resume(action="merge")
+    await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FINISHED)
 
 
 async def test_step_gate_resume_finish(rt):
@@ -408,6 +490,9 @@ async def test_run_agent_step(rt, monkeypatch):
         session.close()
     # The call is recorded under the orchestrator-minted id threaded to run_agent.
     assert recorded[0].id == seen[0]["call_id"]
+    # No account on the start: the fallback account (the module's op@ seed)
+    # is charged.
+    assert recorded[0].account_id == _account_id(rt.engine, "op@example.com")
     assert pinned == [0]  # connection released while the agent runs
 
 

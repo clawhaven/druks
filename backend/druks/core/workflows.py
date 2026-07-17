@@ -1,4 +1,3 @@
-import contextlib
 import logging
 
 from druks.harnesses.datastructures import RotationResult
@@ -22,41 +21,59 @@ class RefreshTokens(Workflow):
 
 async def _refresh() -> dict[str, object]:
     by_name = {harness.name: harness for harness in get_harnesses()}
-    logins = [login for login in HarnessConnection.list_all() if login.harness in by_name]
+    connections = [c for c in HarnessConnection.list_all() if c.harness in by_name]
 
-    # rotate_token is the source of truth for what's due: it no-ops ("fresh", no
-    # server call, no invalidation) any row outside its margin, so rotating all
-    # only refreshes the one(s) actually expiring. A refresh invalidates the
-    # old token server-side and would 401 a VM mid-run holding a pushed copy,
-    # so close the gate around it — but only when a rotation is
-    # coming, since the common no-op tick shouldn't stall provisioning.
-    coming = any(by_name[login.harness].needs_refresh(login) for login in logins)
-    # Snapshot plain values before rotating: each refreshed row commits as it
-    # lands, which expires every ORM object in the session mid-loop.
-    rows = [(login.harness, login.id) for login in logins]
-    gate_ctx = gate.hold() if coming else contextlib.nullcontext()
+    # A refresh 401s a VM mid-call holding the old token, so a due rotation
+    # runs only while its connection is idle — busy defers to the next tick;
+    # urgent rotates regardless. rotate_token no-ops rows outside their
+    # margin. Snapshot plain values: each refresh commits and expires the
+    # session's ORM objects mid-loop.
+    rows = [
+        (
+            connection.harness,
+            connection.id,
+            by_name[connection.harness].needs_refresh(connection),
+            by_name[connection.harness].refresh_is_urgent(connection),
+        )
+        for connection in connections
+    ]
 
     results: list[RotationResult] = []
-    async with gate_ctx:
-        for harness_name, login_id in rows:
-            result = await by_name[harness_name].rotate_token(login_id)
-            _log_result(result)
-            results.append(result)
+    for harness_name, connection_id, due, urgent in rows:
+        if due:
+            async with gate.shut(connection_id) as idle:
+                if idle or urgent:
+                    result = await by_name[harness_name].rotate_token(connection_id)
+                else:
+                    result = RotationResult(harness_name, "busy", connection_id=connection_id)
+        else:
+            result = await by_name[harness_name].rotate_token(connection_id)
+        _log_result(result)
+        results.append(result)
 
     return {
         "results": [
-            {"harness": r.harness, "login_id": r.login_id, "action": r.action, "error": r.error}
+            {
+                "harness": r.harness,
+                "connection_id": r.connection_id,
+                "action": r.action,
+                "error": r.error,
+            }
             for r in results
         ],
     }
 
 
 def _log_result(result: RotationResult) -> None:
-    if result.action == "refreshed":
+    if result.action == "busy":
+        logger.info(
+            "deferring %s rotation for login %s; calls active", result.harness, result.connection_id
+        )
+    elif result.action == "refreshed":
         logger.info(
             "refreshed %s token for login %s; expires_at=%s",
             result.harness,
-            result.login_id,
+            result.connection_id,
             result.expires_at,
         )
     elif result.action == "failed" and result.error != "no_credentials":
@@ -65,13 +82,13 @@ def _log_result(result: RotationResult) -> None:
         logger.warning(
             "token refresh failed for %s login %s: %s",
             result.harness,
-            result.login_id,
+            result.connection_id,
             result.error,
         )
     elif result.action == "no_refresh_token":
         logger.warning(
             "%s login %s has no refresh token; cannot keep it alive",
             result.harness,
-            result.login_id,
+            result.connection_id,
         )
     # "fresh" and "locked" (another worker owns this row's refresh) are quiet no-ops.

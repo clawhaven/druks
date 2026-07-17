@@ -18,7 +18,8 @@ class Summarize(Workflow):
 
     @classmethod
     async def dispatch(cls, *, note_id: int) -> str:
-        # Launch policy for a note: one run per note, keyed by its subject.
+        # Launch policy for a note: one run per note, keyed by its subject; the
+        # signed-in requester attributes it ambiently.
         return await cls.start(
             subject={"type": FieldNotes.subject_type, "id": note_id},
             note_id=note_id,

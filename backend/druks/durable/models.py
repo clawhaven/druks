@@ -9,6 +9,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
+from druks.accounts.constants import SYSTEM_ACCOUNT_ID
+from druks.accounts.models import Account
 from druks.core.models import Uuid7Pk
 from druks.database import db_session, get_session
 from druks.durable.dbos_state import state_expression, subject_filter, updated_at_expression
@@ -50,6 +52,14 @@ class Run(Base):
     # fresh; an already-loaded instance keeps what it read until expired.
     # Read-only; an operator ends a run through cancel().
     state: Mapped[str] = column_property(state_expression(id, input_gate, created_at))
+    # Who asked; the system account when nobody did (crons, background work).
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), default=SYSTEM_ACCOUNT_ID
+    )
+    account: Mapped[Account] = relationship(
+        lazy="joined", innerjoin=True, foreign_keys=[account_id]
+    )
+
     # When the run last changed — the newest of creation, the parked ask, and
     # DBOS's status write.
     updated_at: Mapped[datetime] = column_property(
@@ -61,14 +71,16 @@ class Run(Base):
         return self.state in {s.value for s in ACTIVE_STATES}
 
     @classmethod
-    def create_row(cls, engine, *, workflow_id: str, kind: str) -> None:
+    def create_row(cls, engine, *, workflow_id: str, kind: str, account_id: str | None) -> None:
         # Own committed transaction (not the caller's request txn) so the row
         # exists before the running workflow's first lifecycle event. Idempotent:
         # a scheduled run creates its row inside the (replayable) body, and a
         # start that races its own retry must not double-insert.
         with get_session(engine) as session:
             session.execute(
-                pg_insert(cls).values(id=workflow_id, kind=kind).on_conflict_do_nothing()
+                pg_insert(cls)
+                .values(id=workflow_id, kind=kind, account_id=account_id or SYSTEM_ACCOUNT_ID)
+                .on_conflict_do_nothing()
             )
             session.commit()
 
@@ -205,7 +217,10 @@ class RunArtifactLayout:
 
 class AgentCall(Base, Uuid7Pk):
     __tablename__ = "agent_calls"
-    __table_args__ = (Index("agent_calls_run_idx", "run_id"),)
+    __table_args__ = (
+        Index("agent_calls_run_idx", "run_id"),
+        Index("agent_calls_account_finished_idx", "account_id", "finished_at"),
+    )
 
     # Which model ran this row, snapshotted at dispatch; cost analysis and the
     # transcript layout both read it. Nullable — a call may be recorded before
@@ -217,6 +232,13 @@ class AgentCall(Base, Uuid7Pk):
     # Which agent (registry id: "scope", "implement", …) made this call — the
     # timeline's grouping label. Nullable — not every call is agent-attributed.
     agent: Mapped[str | None] = mapped_column(String, default=None)
+    # The subscription actually charged — differs from the run's account on
+    # fallback.
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), default=SYSTEM_ACCOUNT_ID
+    )
+    account: Mapped[Account] = relationship(lazy="joined", innerjoin=True)
+
     created_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     started_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     status: Mapped[str] = mapped_column(default=AgentCallStatus.RUNNING.value)
@@ -275,6 +297,7 @@ class AgentCall(Base, Uuid7Pk):
         model: str | None,
         agent: str | None,
         host_id: str,
+        account_id: str,
     ) -> None:
         # Recorded RUNNING once the agent starts on its host (id = its on-disk
         # transcript dir) in its own committed transaction, so the live step
@@ -297,6 +320,7 @@ class AgentCall(Base, Uuid7Pk):
                     agent=agent,
                     model=model,
                     sandbox_host_id=host_id,
+                    account_id=account_id,
                 )
             )
             session.commit()

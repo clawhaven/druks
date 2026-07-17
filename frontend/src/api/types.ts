@@ -62,6 +62,8 @@ export interface AgentCallSummary {
   // Which agent made this call ("scope", "implement"); label is its display name.
   agent?: string | null
   label: string
+  /** The account charged for this call — differs from the run's on fallback. */
+  accountEmail: string
   status: 'running' | 'succeeded' | 'failed' | 'abandoned'
   startedAt: string
   finishedAt?: string | null
@@ -109,6 +111,8 @@ export interface RunSummary {
   inputRequest?: InputRequest | null
   createdAt: string
   updatedAt: string
+  /** Who asked; "system" when nobody did. */
+  accountEmail: string
   agentCalls: AgentCallSummary[]
 }
 

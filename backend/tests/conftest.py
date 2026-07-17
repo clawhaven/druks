@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest import mock
 
 import druks.redis
-import druks.sandbox.gate as _gate
 import pytest
 from druks.database import (
     _session_factory,
@@ -30,10 +29,6 @@ _session_factory.configure(join_transaction_mode="create_savepoint")
 # rotation test's monkeypatch) still wins.
 os.environ.setdefault("DRUKS_SECRETS_KEY", base64.b64encode(secrets.token_bytes(32)).decode())
 
-# No Redis in the suite — the sandbox gate no-ops (real VMs/rotation are
-# integration concerns), so its waits don't reach for a client that isn't there.
-_gate._redis = lambda: None
-
 # A Workflow class resolves its declaring extension at definition time, from
 # packages the loader registers before importing. Tests import workflow modules
 # directly and some declare their own workflows, so both register here — before
@@ -51,6 +46,7 @@ class FakeRedis:
         self._data: dict[str, bytes] = {}
         # TTLs are recorded, never enforced — enough to observe a refresh.
         self._ttls: dict[str, int] = {}
+        self._zsets: dict[str, dict[str, float]] = {}
 
     async def set(self, key: str, value: str, *, nx: bool = False, ex: int | None = None):
         if nx and key in self._data:
@@ -75,6 +71,29 @@ class FakeRedis:
     async def getdel(self, key: str) -> bytes | None:
         self._ttls.pop(key, None)
         return self._data.pop(key, None)
+
+    # Sorted sets — the per-login gate's active-user registry. Stored apart
+    # from the string keys; scores kept for the range prune.
+    async def zadd(self, key: str, mapping: dict[str, float]) -> int:
+        zset = self._zsets.setdefault(key, {})
+        added = sum(1 for member in mapping if member not in zset)
+        zset.update(mapping)
+        return added
+
+    async def zrem(self, key: str, *members: str) -> int:
+        zset = self._zsets.get(key, {})
+        return sum(1 for member in members if zset.pop(member, None) is not None)
+
+    async def zcard(self, key: str) -> int:
+        return len(self._zsets.get(key, {}))
+
+    async def zremrangebyscore(self, key: str, low: object, high: float) -> int:
+        zset = self._zsets.get(key, {})
+        floor = float("-inf") if low in ("-inf", None) else float(low)  # type: ignore[arg-type]
+        doomed = [member for member, score in zset.items() if floor <= score <= float(high)]
+        for member in doomed:
+            del zset[member]
+        return len(doomed)
 
     async def delete(self, key: str) -> None:
         self._data.pop(key, None)
@@ -319,8 +338,11 @@ def configure_app_for_test(
 
 async def _test_account():
     from druks.accounts.models import Account
+    from druks.accounts.sessions import current_account_id
 
-    return Account.get_or_create("op@example.com")
+    account = Account.get_or_create("op@example.com")
+    current_account_id.set(account.id)
+    return account
 
 
 @pytest.fixture(autouse=True)
@@ -518,11 +540,11 @@ def seed_agent_run(
     return call
 
 
-def seed_run(session, run_id, *, kind="build.build_workflow"):
+def seed_run(session, run_id, *, kind="build.build_workflow", account_id="system"):
     # A bare durable_runs row so an AgentCall / Artifact FK to it resolves.
     from druks.durable import Run
 
-    run = Run(id=run_id, kind=kind)
+    run = Run(id=run_id, kind=kind, account_id=account_id)
     session.add(run)
     session.flush()
     return run

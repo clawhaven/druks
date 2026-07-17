@@ -64,6 +64,7 @@ class ClaudeHarness(Harness):
         add_dirs: tuple[str, ...] = (),
         extra_env: dict[str, str] | None = None,
         mcp_servers: tuple[McpServer, ...] = (),
+        connection_id: str | None = None,
     ) -> AgentInvocation:
         if not self.sandbox:
             raise HarnessError(
@@ -119,6 +120,7 @@ class ClaudeHarness(Harness):
                 self.sandbox,
                 github_token=github_token,
                 include_plugins=include_plugins,
+                connection_id=connection_id,
             ),
             env=extra_env,
             extra_artifact_filenames=("debug.log", "session.jsonl"),
@@ -332,6 +334,7 @@ def _claude_credentials(
     *,
     github_token: str | None,
     include_plugins: bool = True,
+    connection_id: str | None = None,
 ) -> Credentials:
     """Build the Credentials bundle the runner SFTP-pushes into the sandbox.
     The credential file is synthesized from the DB row (raises when claude
@@ -375,7 +378,7 @@ def _claude_credentials(
     if skills_src:
         dirs += ((skills_src, ".claude/skills"),)
     return Credentials(
-        claude_credentials=ClaudeHarness.render_credentials_file(),
+        claude_credentials=ClaudeHarness.render_credentials_file(connection_id),
         github_token=github_token,
         extra_config_files=files,
         extra_config_dirs=dirs,

@@ -1,5 +1,6 @@
 import logging
 
+from druks.accounts.models import Account
 from druks.build.extension import Build
 from druks.build.models import Project, ProjectRepo, WorkItem
 from druks.build.scoping.contracts import ScopeBriefOutput
@@ -44,8 +45,12 @@ class Scope(Workflow):
                 remote_url=ticket.url,
                 repo=target.full_name,
             )
+        assignee = None
+        if ticket.assignee_email:
+            assignee = Account.get_for_email(ticket.assignee_email.strip())
         return await cls.start(
             subject=WorkItem.subject_for(item.id),
+            account_id=assignee.id if assignee else None,
             remote_key=ticket.key,
             source=ticket.provider,
         )

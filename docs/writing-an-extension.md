@@ -131,9 +131,20 @@ run_id = await Sweep.start(
 ```
 
 Pass `subject=None` deliberately for background work. A subject has at most one
-active run of a workflow kind; a duplicate start returns the active run id.
-Wrap `start()` in a domain `dispatch()` method when the extension needs lookup,
-snapshot, or routing policy before launch.
+active run of a workflow kind; a duplicate start returns the active run id —
+attribution never changes that (two accounts starting the same subject share
+the one run). Wrap `start()` in a domain `dispatch()` method when the extension
+needs lookup, snapshot, or routing policy before launch.
+
+A browser-origin start attributes itself: the session gate stamps the
+request's signed-in account, and `start()` inherits it — a route that starts a
+workflow needs no ceremony. Pass `account_id` only when the dispatcher knows
+better (a webhook dispatch resolving the ticket assignee). Each agent call
+executes with the run's account's own connection, else the install's fallback
+account — the charged account is recorded on the call, so a fallback is
+visible by comparison. Runs with no account anywhere (crons, background work)
+run as the system account. Resuming a parked run keeps its original attribution;
+the person clicking Resume never becomes the payer.
 
 ### Schedules and settings
 

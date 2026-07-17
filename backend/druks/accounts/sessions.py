@@ -1,9 +1,14 @@
 import secrets
+from contextvars import ContextVar
 
 from druks.redis import get_client
 
 SESSION_COOKIE = "druks_session"
 SESSION_TTL_SECONDS = 30 * 24 * 3600
+
+# The request's signed-in account, stamped by the session gate — Workflow.start
+# reads it so a browser-origin run attributes itself without route ceremony.
+current_account_id: ContextVar[str | None] = ContextVar("current_account_id", default=None)
 
 
 def _session_key(token: str) -> str:

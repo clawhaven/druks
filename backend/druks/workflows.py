@@ -19,6 +19,7 @@ from dbos._error import (
 from pydantic import BaseModel, ConfigDict, Field, create_model
 from uuid_utils import uuid7
 
+from druks.accounts.sessions import current_account_id
 from druks.durable.activity import get_run_phase, set_run_phase
 from druks.durable.engine import _step_engine, register_schedule, run_queue, step_session
 from druks.durable.enums import AgentCallStatus, RunState
@@ -81,6 +82,10 @@ current_workflow: ContextVar["Workflow"] = ContextVar("current_workflow")
 # True while a @step body runs. An agent run inside one is already memoized by that
 # step, so it skips wrapping itself; outside, it wraps itself in its own step.
 _in_step: ContextVar[bool] = ContextVar("_in_step", default=False)
+
+# Reserved so _entry's arity and old checkpoints stay untouched; a body
+# parameter may not claim it.
+_ACCOUNT_INPUT_KEY = "__account_id__"
 
 
 class _Subject(BaseModel):
@@ -367,6 +372,7 @@ async def _execute_run(
     workflow_id: str,
     kind: str,
     subject: dict[str, Any] | None,
+    account_id: str | None,
     body: Callable,
 ) -> Any:
     # Ensure the row (idempotent, so a scheduled run with no start() makes it
@@ -374,7 +380,7 @@ async def _execute_run(
     # Every failure re-raises so DBOS records the terminal ERROR derived state
     # reads; an operator cancel already carries its own reason and terminal
     # status, so it passes through untouched.
-    Run.create_row(_step_engine(), workflow_id=workflow_id, kind=kind)
+    Run.create_row(_step_engine(), workflow_id=workflow_id, kind=kind, account_id=account_id)
     await _emit_run_event(workflow_id, RunState.RUNNING, subject=subject)
     try:
         result = await body()
@@ -449,6 +455,14 @@ class Workflow:
         cls._body_method = _resolve_body_method(cls)
         # Before _wrap_steps: run()'s wrapper signature is (*args, **kwargs).
         cls._run_input_model = _input_model_from_signature(cls)
+        if cls._run_input_model:
+            claimed = {"account_id"} & set(cls._run_input_model.model_fields)
+            if claimed:
+                raise WorkflowError(
+                    f"{cls.__name__}.{cls._body_method}() declares reserved start() "
+                    f"parameter(s) {sorted(claimed)} — attribution is platform "
+                    "routing, not workflow input; name the parameter differently"
+                )
         _wrap_steps(cls)
         _register_entry(cls)
         workflows.register(cls)
@@ -462,6 +476,9 @@ class Workflow:
         # run()'s validated input bundle (the model synthesized from its signature),
         # set before run() — for templates and derived properties. None = no input.
         self.input: BaseModel | None = None
+        # Who requested/triggered the run, replayed off the reserved input
+        # key; None on system-owned runs (crons, old checkpoints).
+        self.account_id: str | None = None
         # Facts published with set_state, kept warm for sync reads (templates,
         # workspace kwargs); the durable copy is the run's DBOS events.
         self._state_facts: dict[str, Any] = {}
@@ -603,7 +620,13 @@ class Workflow:
         SettingsOverride.set_workflow_setting(cls.kind, field, value)
 
     @classmethod
-    async def start(cls, *, subject: dict[str, Any] | None, **input: Any) -> str:
+    async def start(
+        cls,
+        *,
+        subject: dict[str, Any] | None,
+        account_id: str | None = None,
+        **input: Any,
+    ) -> str:
         # Mint the id, write the projection row, enqueue the body. Returns the
         # workflow id; an extension that wants one-active-run-per-subject enforces
         # that on its own side before calling this. Enqueuing (not start_workflow)
@@ -614,6 +637,10 @@ class Workflow:
         # shape fails at start, not inside the run.
         # subject is required (no default) so a run can't silently lose its
         # timeline by omission — pass subject=None explicitly for a background run.
+        if account_id is None:
+            # Browser-origin starts inherit the session gate's account;
+            # dispatchers that know better pass account_id explicitly.
+            account_id = current_account_id.get()
         if subject is not None:
             _Subject.model_validate(subject)  # raises on a bad shape (wrong/extra keys, types)
         if cls._run_input_model is None:
@@ -622,6 +649,8 @@ class Workflow:
             wire: dict[str, Any] = {}
         else:
             wire = cls._run_input_model.model_validate(input).model_dump(mode="json")
+        if account_id:
+            wire[_ACCOUNT_INPUT_KEY] = account_id
         workflow_id = str(uuid7())
         # A subject has at most one active run per workflow kind, enforced by
         # DBOS queue deduplication: the slot is claimed atomically at enqueue,
@@ -655,10 +684,12 @@ class Workflow:
                 return holder
             # The holder reached terminal between the rejection and the lookup —
             # the slot is free now, so this start goes through.
-            return await cls.start(subject=subject, **input)
+            return await cls.start(subject=subject, account_id=account_id, **input)
         # The body also creates its row (idempotently) — this one just makes it
         # visible before an executor picks the workflow up.
-        Run.create_row(_step_engine(), workflow_id=workflow_id, kind=cls.kind)
+        Run.create_row(
+            _step_engine(), workflow_id=workflow_id, kind=cls.kind, account_id=account_id
+        )
         return workflow_id
 
 
@@ -696,12 +727,16 @@ async def _run_instance(
     instance = cls()
     instance._workflow_id = DBOS.workflow_id  # type: ignore[assignment]
     instance.subject = subject
+    # Platform routing comes off before body validation; an old checkpoint
+    # without the key replays account-less.
+    input = dict(input or {})
+    instance.account_id = input.pop(_ACCOUNT_INPUT_KEY, None)
     # The body's input re-validates from its wire dict; a cron fires with no
     # input, so a scheduled workflow must default every parameter. The validated
     # bundle also lands on the instance for templates / derived properties.
     run_kwargs: dict[str, Any] = {}
     if cls._run_input_model:
-        validated = cls._run_input_model.model_validate(input or {})
+        validated = cls._run_input_model.model_validate(input)
         instance.input = validated
         run_kwargs = {name: getattr(validated, name) for name in type(validated).model_fields}
     token = current_workflow.set(instance)
@@ -710,6 +745,7 @@ async def _run_instance(
             instance._workflow_id,
             cls.kind,
             subject,
+            instance.account_id,
             lambda: getattr(instance, cls._body_method)(**run_kwargs),
         )
     finally:

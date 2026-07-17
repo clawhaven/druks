@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pydantic import BaseModel, Field
 
+from druks.accounts.models import Account
 from druks.build.contracts import (
     HumanFeedback,
     Implementation,
@@ -39,6 +40,7 @@ if TYPE_CHECKING:
     from druks.sandbox.host import Sandbox
 
 logger = logging.getLogger(__name__)
+
 
 # The github MCP server build ships into its own runs — build's requirement
 # (there is no build without github), not an operator-facing catalog entry.
@@ -144,8 +146,11 @@ class BuildWorkflow(Workflow):
         item = WorkItem.get(work_item_id)
         if not item:
             raise ValueError(f"dispatching a build for unknown work item {work_item_id}")
+        # The assignee's account runs the calls; the owner fields stay input.
+        assignee = Account.get_for_email(assignee_email.strip()) if assignee_email else None
         run_id = await cls.start(
             subject=WorkItem.subject_for(item.id),
+            account_id=assignee.id if assignee else None,
             repo=item.repo,
             source=item.source,
             ticket_ref=item.remote_key,

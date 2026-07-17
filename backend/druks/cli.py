@@ -122,14 +122,13 @@ def main() -> None:
     ensure_data_dirs(settings)
 
     if args.command == "init-db":
-        # Alembic owns the schema; seed the registry-backed harness rows after
-        # it (a fresh DB has none, and a newly-added harness needs one).
-        from .user_settings.models import seed_harnesses
+        # Alembic owns the schema; the first-start seeds run after it.
+        from .bootstrap import seed
 
         run_migrations(settings.database_url)
         engine = create_engine_from_url(settings.database_url)
         try:
-            seed_harnesses(engine)
+            seed(engine)
         finally:
             engine.dispose()
         return
