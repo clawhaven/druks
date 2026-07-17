@@ -143,7 +143,7 @@ better (a webhook dispatch resolving the ticket assignee). Each agent call
 executes with the run's account's own connection, else the install's fallback
 account — the charged account is recorded on the call, so a fallback is
 visible by comparison. Runs with no account anywhere (crons, background work)
-read as unattributed. Resuming a parked run keeps its original attribution;
+run as the system account. Resuming a parked run keeps its original attribution;
 the person clicking Resume never becomes the payer.
 
 ### Schedules and settings

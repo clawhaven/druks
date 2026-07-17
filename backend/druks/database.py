@@ -99,6 +99,7 @@ def init_db(engine) -> None:
     import druks.notifications.models  # noqa: F401
     import druks.skills.models  # noqa: F401
     import druks.user_settings.models  # noqa: F401
+    from druks.accounts.models import seed_system_account
     from druks.extensions.loader import import_extension_models
     from druks.models import Base
     from druks.user_settings.models import seed_harnesses
@@ -110,6 +111,7 @@ def init_db(engine) -> None:
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS citext"))
     Base.metadata.create_all(engine)
     seed_harnesses(engine)
+    seed_system_account(engine)
 
 
 def get_session(engine) -> Session:

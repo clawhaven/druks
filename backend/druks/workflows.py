@@ -477,7 +477,7 @@ class Workflow:
         # set before run() — for templates and derived properties. None = no input.
         self.input: BaseModel | None = None
         # Who requested/triggered the run, replayed off the reserved input
-        # key; None on unattributed runs (crons, old checkpoints).
+        # key; None on system-owned runs (crons, old checkpoints).
         self.account_id: str | None = None
         # Facts published with set_state, kept warm for sync reads (templates,
         # workspace kwargs); the durable copy is the run's DBOS events.

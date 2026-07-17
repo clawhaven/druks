@@ -14,10 +14,10 @@ def test_run_projects_its_account(db_session):
     assert RunResponse.from_run(run, []).account_email == "dev@example.com"
 
 
-def test_an_unattributed_run_projects_nothing(db_session):
+def test_an_unowned_run_belongs_to_system(db_session):
     seed_run(db_session, "run-attr-2")
     db_session.flush()
 
     run = db_session.get(Run, "run-attr-2")
-    assert not run.account_id
-    assert not RunResponse.from_run(run, []).account_email
+    assert run.account_id == "system"
+    assert RunResponse.from_run(run, []).account_email == "system"

@@ -19,25 +19,23 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Existing rows stay NULL — unattributed, never guessed.
-    op.add_column("durable_runs", sa.Column("account_id", sa.String(), nullable=True))
-    op.create_foreign_key(
-        "durable_runs_account_id_fkey",
-        "durable_runs",
-        "accounts",
-        ["account_id"],
-        ["id"],
-        ondelete="SET NULL",
+    # Pre-release: existing rows adopt the system account.
+    op.execute(
+        "INSERT INTO accounts (id, email, created_at) VALUES ('system', 'system', now()) "
+        "ON CONFLICT (id) DO NOTHING"
     )
-    op.add_column("agent_calls", sa.Column("account_id", sa.String(), nullable=True))
-    op.create_foreign_key(
-        "agent_calls_account_id_fkey",
-        "agent_calls",
-        "accounts",
-        ["account_id"],
-        ["id"],
-        ondelete="RESTRICT",
-    )
+    for table in ("durable_runs", "agent_calls"):
+        op.add_column(table, sa.Column("account_id", sa.String(), nullable=True))
+        op.execute(f"UPDATE {table} SET account_id = 'system'")
+        op.alter_column(table, "account_id", nullable=False)
+        op.create_foreign_key(
+            f"{table}_account_id_fkey",
+            table,
+            "accounts",
+            ["account_id"],
+            ["id"],
+            ondelete="RESTRICT",
+        )
     op.create_index(
         "agent_calls_account_finished_idx", "agent_calls", ["account_id", "finished_at"]
     )
@@ -45,7 +43,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("agent_calls_account_finished_idx", table_name="agent_calls")
-    op.drop_constraint("agent_calls_account_id_fkey", "agent_calls", type_="foreignkey")
-    op.drop_column("agent_calls", "account_id")
-    op.drop_constraint("durable_runs_account_id_fkey", "durable_runs", type_="foreignkey")
-    op.drop_column("durable_runs", "account_id")
+    for table in ("agent_calls", "durable_runs"):
+        op.drop_constraint(f"{table}_account_id_fkey", table, type_="foreignkey")
+        op.drop_column(table, "account_id")

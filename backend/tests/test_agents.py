@@ -273,8 +273,12 @@ async def test_recovery_supersedes_the_orphaned_running_call(db_session):
     from druks.durable.engine import _step_engine
 
     engine = _step_engine()
-    AgentCall.start(engine, call_id="a", run_id="wf-9", model="m", agent=None, host_id="h")
-    AgentCall.start(engine, call_id="b", run_id="wf-9", model="m", agent=None, host_id="h")
+    AgentCall.start(
+        engine, call_id="a", run_id="wf-9", model="m", agent=None, host_id="h", account_id="system"
+    )
+    AgentCall.start(
+        engine, call_id="b", run_id="wf-9", model="m", agent=None, host_id="h", account_id="system"
+    )
 
     by_id = {call.id: call for call in AgentCall.list_for_run("wf-9")}
     assert by_id["a"].status == "abandoned"

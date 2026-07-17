@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Mapped, column_property, mapped_column, relationship
 
-from druks.accounts.models import Account
+from druks.accounts.models import SYSTEM_ACCOUNT_ID, Account
 from druks.core.models import Uuid7Pk
 from druks.database import db_session, get_session
 from druks.durable.dbos_state import state_expression, subject_filter, updated_at_expression
@@ -51,12 +51,12 @@ class Run(Base):
     # fresh; an already-loaded instance keeps what it read until expired.
     # Read-only; an operator ends a run through cancel().
     state: Mapped[str] = column_property(state_expression(id, input_gate, created_at))
-    # Who requested/triggered the run; NULL reads unattributed. Eager-joined
-    # for I/O-free projection.
-    account_id: Mapped[str | None] = mapped_column(
-        ForeignKey("accounts.id", ondelete="SET NULL"), default=None
+    # Who asked; the system account when nobody did (crons, background work).
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), default=SYSTEM_ACCOUNT_ID
     )
-    account: Mapped[Account | None] = relationship(lazy="joined", foreign_keys=[account_id])
+    account: Mapped[Account] = relationship(lazy="joined", foreign_keys=[account_id])
+
     # When the run last changed — the newest of creation, the parked ask, and
     # DBOS's status write.
     updated_at: Mapped[datetime] = column_property(
@@ -76,7 +76,7 @@ class Run(Base):
         with get_session(engine) as session:
             session.execute(
                 pg_insert(cls)
-                .values(id=workflow_id, kind=kind, account_id=account_id)
+                .values(id=workflow_id, kind=kind, account_id=account_id or SYSTEM_ACCOUNT_ID)
                 .on_conflict_do_nothing()
             )
             session.commit()
@@ -231,10 +231,11 @@ class AgentCall(Base, Uuid7Pk):
     agent: Mapped[str | None] = mapped_column(String, default=None)
     # The subscription actually charged — differs from the run's account on
     # fallback.
-    account_id: Mapped[str | None] = mapped_column(
-        ForeignKey("accounts.id", ondelete="RESTRICT"), default=None
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="RESTRICT"), default=SYSTEM_ACCOUNT_ID
     )
-    account: Mapped[Account | None] = relationship(lazy="joined")
+    account: Mapped[Account] = relationship(lazy="joined")
+
     created_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     started_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     status: Mapped[str] = mapped_column(default=AgentCallStatus.RUNNING.value)
@@ -293,7 +294,7 @@ class AgentCall(Base, Uuid7Pk):
         model: str | None,
         agent: str | None,
         host_id: str,
-        account_id: str | None = None,
+        account_id: str,
     ) -> None:
         # Recorded RUNNING once the agent starts on its host (id = its on-disk
         # transcript dir) in its own committed transaction, so the live step
