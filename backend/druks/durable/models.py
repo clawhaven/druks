@@ -230,8 +230,7 @@ class AgentCall(Base, Uuid7Pk):
     # timeline's grouping label. Nullable — not every call is agent-attributed.
     agent: Mapped[str | None] = mapped_column(String, default=None)
     # The subscription actually charged — differs from the run's account on
-    # fallback. NULL on legacy calls, never guessed. Eager-joined for
-    # I/O-free projection.
+    # fallback.
     account_id: Mapped[str | None] = mapped_column(
         ForeignKey("accounts.id", ondelete="RESTRICT"), default=None
     )

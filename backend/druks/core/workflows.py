@@ -21,7 +21,7 @@ class RefreshTokens(Workflow):
 
 async def _refresh() -> dict[str, object]:
     by_name = {harness.name: harness for harness in get_harnesses()}
-    logins = [login for login in HarnessConnection.list_all() if login.harness in by_name]
+    connections = [c for c in HarnessConnection.list_all() if c.harness in by_name]
 
     # A refresh 401s a VM mid-call holding the old token, so a due rotation
     # runs only while its connection is idle — busy defers to the next tick;
@@ -30,12 +30,12 @@ async def _refresh() -> dict[str, object]:
     # session's ORM objects mid-loop.
     rows = [
         (
-            login.harness,
-            login.id,
-            by_name[login.harness].needs_refresh(login),
-            by_name[login.harness].refresh_is_urgent(login),
+            connection.harness,
+            connection.id,
+            by_name[connection.harness].needs_refresh(connection),
+            by_name[connection.harness].refresh_is_urgent(connection),
         )
-        for login in logins
+        for connection in connections
     ]
 
     results: list[RotationResult] = []

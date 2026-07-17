@@ -383,22 +383,19 @@ class Harness(ABC):
             await redis.delete(lock_key)
 
     @classmethod
-    def refresh_is_urgent(cls, login: HarnessConnection) -> bool:
+    def refresh_is_urgent(cls, connection: HarnessConnection) -> bool:
         """Expiry inside the call horizon: a mid-run 401 is unavoidable."""
-        _, expires_at = cls._refresh_state(dict(login.payload))
+        _, expires_at = cls._refresh_state(dict(connection.payload))
         if not expires_at:
             return False
         return expires_at - _utc_now() < timedelta(seconds=MAX_AGENT_TIMEOUT_SECONDS)
 
     @classmethod
-    def needs_refresh(cls, login: HarnessConnection) -> bool:
-        """Whether the row's access token is within its refresh margin — the
-        cheap read the refresh workflow uses to decide whether to gate
-        provisioning before rotating. An unreadable/expired credential reads
-        as False: there's nothing live to protect, so let the rotation sort it
-        out ungated."""
+    def needs_refresh(cls, connection: HarnessConnection) -> bool:
+        """Whether the access token is inside its refresh margin. Unreadable
+        or expired reads False: nothing live to protect, rotate ungated."""
         try:
-            token = cls._token_from_credentials(dict(login.payload))
+            token = cls._token_from_credentials(dict(connection.payload))
         except OAuthTokenError:
             return False
         if not token.expires_at:
