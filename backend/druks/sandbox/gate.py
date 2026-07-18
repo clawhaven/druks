@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from druks.redis import get_client
 
-from .constants import MAX_AGENT_TIMEOUT_SECONDS
+from .constants import GATE_USERS_PREFIX, MAX_AGENT_TIMEOUT_SECONDS, ROTATING_PREFIX
 
 # One gate per credential: rotation runs only while its connection is idle
 # (busy defers to the next tick); other connections never block. Active calls
@@ -18,11 +18,11 @@ _SHUT_TTL_SECONDS = 60
 
 
 def _rotating_key(connection_id: str) -> str:
-    return f"druks:sandbox:rotating:{connection_id}"
+    return f"{ROTATING_PREFIX}{connection_id}"
 
 
 def _users_key(connection_id: str) -> str:
-    return f"druks:sandbox:gate:users:{connection_id}"
+    return f"{GATE_USERS_PREFIX}{connection_id}"
 
 
 @asynccontextmanager

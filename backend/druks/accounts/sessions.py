@@ -3,6 +3,8 @@ from contextvars import ContextVar
 
 from druks.redis import get_client
 
+from .constants import SESSION_PREFIX
+
 SESSION_COOKIE = "druks_session"
 SESSION_TTL_SECONDS = 30 * 24 * 3600
 
@@ -12,7 +14,7 @@ current_account_id: ContextVar[str | None] = ContextVar("current_account_id", de
 
 
 def _session_key(token: str) -> str:
-    return f"druks:session:{token}"
+    return f"{SESSION_PREFIX}{token}"
 
 
 async def mint_session(account_id: str) -> str:
