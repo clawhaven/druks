@@ -172,13 +172,21 @@ class SubjectSummary(BaseResponse):
 class SubjectStatus(BaseResponse):
     # The subject's lifecycle status for the dashboard lane — derived by the read
     # side, never stored; ``state`` is the canonical RunState aggregated across
-    # the subject's runs.
+    # the subject's runs. Everything else is a fact the extension's UI renders
+    # its own copy from; the platform ships no prose.
     state: RunState
-    label: str
+    # The driving run's kind and, while running, its latest agent call's agent.
+    kind: str | None = None
+    agent: str | None = None
+    # A parked gate's declared ask label — the author's own words at ``Gate.wait``.
+    ask_label: str | None = None
     # The stop reason of the run driving ``state`` — set only when that run is
     # terminal-failed (an active or finished subject carries none). Lets a board
-    # render "why" inline without reaching into the timeline.
+    # render "why" inline without reaching into the timeline. ``reason`` is its
+    # machine-readable classification (``gate_timeout``): an unanswered gate,
+    # not a crash.
     failure: str | None = None
+    reason: str | None = None
 
 
 class SubjectRow(BaseResponse):
