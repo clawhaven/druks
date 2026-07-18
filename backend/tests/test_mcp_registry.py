@@ -346,7 +346,7 @@ def test_add_from_registry_writes_the_row_and_redacts_the_secret(tmp_path, monke
     # The row: url from the registry (never the client), values split by the
     # spec's secrecy — the plain one readable, the secret one ciphertext at
     # rest and redacted in repr.
-    row = McpServer.get_by_name("observer")
+    row = McpServer.get_for_name("observer")
     assert row.url == "https://mcp.acme.com/mcp"
     assert row.headers == {"X-Region": "eu"}
     assert "acme-api-secret" not in repr(row.secret_headers)
@@ -389,7 +389,7 @@ def test_add_from_registry_oauth_candidate_ships_dark_and_connects(
         assert connect.json()["authorizationUrl"] == "https://consent.example/authorize"
         assert begun == [("grafana", "https://mcp.grafana.com/mcp", "http://druks.test")]
 
-    row = McpServer.get_by_name("grafana")
+    row = McpServer.get_for_name("grafana")
     assert row.headers == {"X-Grafana-URL": "https://acme.grafana.net"}
 
 
@@ -422,7 +422,7 @@ def test_add_from_registry_rejects_missing_required_and_unknown_headers(
             assert unknown.status_code == 422
             assert "X-Bogus" in unknown.json()["detail"]
 
-        assert not McpServer.get_by_name("observer")
+        assert not McpServer.get_for_name("observer")
 
 
 def test_add_from_registry_rejects_an_entry_without_an_http_remote(
@@ -456,5 +456,5 @@ def test_removing_a_connected_row_drops_its_grant(tmp_path, monkeypatch, db_sess
         assert client.delete("/api/mcp-servers/grafana").status_code == 204
 
     # An orphan grant would revive as this name's credential on re-add.
-    assert not McpServer.get_by_name("grafana")
-    assert not McpOauthGrant.get_by_server("grafana")
+    assert not McpServer.get_for_name("grafana")
+    assert not McpOauthGrant.get_for_server("grafana")

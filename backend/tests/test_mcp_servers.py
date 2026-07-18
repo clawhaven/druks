@@ -61,13 +61,13 @@ def _requiring_workspace(*servers: RequiredMcpServer) -> Workspace:
 def test_create_lists_and_deletes(db_session):
     server = McpServer.create(name="linear", url=_LINEAR_URL, token=_TOKEN)
 
-    by_name = McpServer.get_by_name("linear")
+    by_name = McpServer.get_for_name("linear")
     assert by_name
     assert by_name.id == server.id
     assert "linear" in {s.name for s in McpServer.list_all()}
 
     server.delete()
-    assert not McpServer.get_by_name("linear")
+    assert not McpServer.get_for_name("linear")
 
 
 def test_enable_disable_moves_in_and_out_of_the_enabled_set(db_session):
@@ -445,7 +445,7 @@ def test_routes_disable_and_refuse_deleting_a_builtin(tmp_path, registry_state, 
         assert disabled.status_code == 200
         assert disabled.json()["isEnabled"] is False
         # The overlay row now exists and the entry reads disabled everywhere.
-        assert McpServer.get_by_name("figma_test")
+        assert McpServer.get_for_name("figma_test")
 
 
 # --- catalog: the deploy-declarative default-server set -------------------
@@ -519,7 +519,7 @@ def test_packaged_linear_enables_like_any_builtin(tmp_path, registry_state, db_s
         assert enabled.json()["isEnabled"] is True
         # The operator's overlay row now carries the choice; the shipped
         # default only ever applied while no row existed.
-        assert McpServer.get_by_name("linear")
+        assert McpServer.get_for_name("linear")
 
 
 def test_load_catalog_tolerates_wrapper_and_is_idempotent(tmp_path, registry_state):

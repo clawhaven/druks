@@ -45,7 +45,7 @@ def test_stored_secrets_are_ciphertext_and_reads_restore_them(db_engine, db_sess
     blob = bytes(db_engine.execute(text("SELECT token FROM mcp_servers")).scalar_one())
     assert _TOKEN.encode() not in blob
     db_session.expire_all()
-    row = McpServer.get_by_name("linear")
+    row = McpServer.get_for_name("linear")
     assert row.token.decrypt() == _TOKEN
     # The resolved view every consumer reads carries the Secret itself, so it
     # plaintext exists only where decrypt() is called.
@@ -58,7 +58,7 @@ def test_grant_secret_halves_round_trip(db_session):
     _store_grant(refresh_token="rt-secret", client_secret="cs-secret")
 
     db_session.expire_all()
-    grant = McpOauthGrant.get_by_server("notion")
+    grant = McpOauthGrant.get_for_server("notion")
     assert grant.refresh_token.decrypt() == "rt-secret"
     assert grant.client_secret.decrypt() == "cs-secret"
 
@@ -69,7 +69,7 @@ def test_loaded_secrets_are_lazy_and_redacted(monkeypatch, db_session):
 
     # Loading and logging a row never touches key material — decryption
     # happens only on decrypt(), and repr leaks nothing either way.
-    row = McpServer.get_by_name("linear")
+    row = McpServer.get_for_name("linear")
     monkeypatch.setenv("DRUKS_SECRETS_KEY", "")
     assert repr(row.token) == "Secret(<redacted>)"
     assert str(row.token) == "Secret(<redacted>)"
@@ -84,7 +84,7 @@ def test_empty_value_needs_no_key(monkeypatch, db_engine, db_session):
     db_session.expire_all()
 
     assert bytes(db_engine.execute(text("SELECT token FROM mcp_servers")).scalar_one()) == b""
-    row = McpServer.get_by_name("linear")
+    row = McpServer.get_for_name("linear")
     monkeypatch.setenv("DRUKS_SECRETS_KEY", "")
     assert not row.token
     assert row.token.decrypt() == ""
@@ -133,7 +133,7 @@ def test_undecryptable_secret_raises_the_named_error(monkeypatch, db_session):
     monkeypatch.setenv("DRUKS_SECRETS_KEY", _key())
 
     with pytest.raises(SecretDecryptError, match="rotated out"):
-        McpServer.get_by_name("linear").token.decrypt()
+        McpServer.get_for_name("linear").token.decrypt()
 
 
 def test_garbled_envelope_raises_the_named_error(db_engine, db_session):
@@ -145,7 +145,7 @@ def test_garbled_envelope_raises_the_named_error(db_engine, db_session):
     db_session.expire_all()
 
     with pytest.raises(SecretDecryptError):
-        McpServer.get_by_name("linear").token.decrypt()
+        McpServer.get_for_name("linear").token.decrypt()
 
 
 def test_ciphertext_is_bound_to_its_column(db_engine, db_session):
@@ -159,7 +159,7 @@ def test_ciphertext_is_bound_to_its_column(db_engine, db_session):
     db_engine.execute(text("UPDATE mcp_oauth_grants SET client_secret = refresh_token"))
     db_session.expire_all()
 
-    grant = McpOauthGrant.get_by_server("notion")
+    grant = McpOauthGrant.get_for_server("notion")
     with pytest.raises(SecretDecryptError):
         grant.refresh_token.decrypt()
     with pytest.raises(SecretDecryptError):
@@ -176,8 +176,8 @@ def test_prepended_key_still_decrypts(monkeypatch, db_session):
 
     monkeypatch.setenv("DRUKS_SECRETS_KEY", f"{_key()},{old_key}")
     db_session.expire_all()
-    assert McpServer.get_by_name("linear").token.decrypt() == _TOKEN
-    assert McpOauthGrant.get_by_server("notion").refresh_token.decrypt() == "rt-secret"
+    assert McpServer.get_for_name("linear").token.decrypt() == _TOKEN
+    assert McpOauthGrant.get_for_server("notion").refresh_token.decrypt() == "rt-secret"
 
 
 # --- EncryptedJsonField (via the test-only model) ---------------------------

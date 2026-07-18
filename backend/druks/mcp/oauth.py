@@ -275,7 +275,7 @@ async def mint_access_token(name: str) -> str:
     else:
         raise GrantRefreshError(name, "timed out waiting for a concurrent refresh to finish")
     try:
-        grant = McpOauthGrant.get_by_server(name)
+        grant = McpOauthGrant.get_for_server(name)
         if not grant:
             raise MissingGrantError(name)
         # The grant's secret halves are ciphertext at rest; the plaintext

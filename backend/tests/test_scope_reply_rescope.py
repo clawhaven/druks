@@ -127,7 +127,7 @@ async def test_label_routed_ticket_lands_on_the_work_item(db_session, _stub_enqu
         labels=["Alfred"],
     )
     assert await Scope.dispatch(ticket=ticket) is not None
-    item = WorkItem.get_by_remote_key(source="jira", remote_key="SHRP-40586")
+    item = WorkItem.get_for_remote_key(source="jira", remote_key="SHRP-40586")
     assert item.repo == "octo/alfred"
 
 
@@ -145,4 +145,4 @@ async def test_unroutable_ticket_creates_nothing(db_session, _stub_enqueue):
     )
     assert await Scope.dispatch(ticket=ticket) is None
     assert _stub_enqueue == []
-    assert WorkItem.get_by_remote_key(source="jira", remote_key="SHRP-9") is None
+    assert WorkItem.get_for_remote_key(source="jira", remote_key="SHRP-9") is None

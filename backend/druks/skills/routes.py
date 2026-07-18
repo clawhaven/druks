@@ -18,7 +18,7 @@ async def list_collections() -> list[SkillCollection]:
 
 @router.post("", response_model=CollectionResponse)
 async def install_collection(url: str = Body(..., embed=True)) -> SkillCollection:
-    if SkillCollection.get_by_source(url):
+    if SkillCollection.get_for_source(url):
         raise HTTPException(
             status_code=409, detail=f"Collection {url!r} already installed; remove it first."
         )

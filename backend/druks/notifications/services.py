@@ -41,7 +41,7 @@ def validate_in_app_answer(
 
 
 async def respond_to_notification(token: str, choice: dict[str, Any]) -> None:
-    notification = Notification.get_by_token(token)
+    notification = Notification.get_for_token(token)
     if not notification:
         raise UnknownTokenError()
     if notification.is_acknowledged:

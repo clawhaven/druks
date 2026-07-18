@@ -34,7 +34,7 @@ async def list_destinations() -> list[Destination]:
 async def create_destination(body: CreateDestinationRequest) -> Destination:
     if not body.name.strip():
         raise HTTPException(status_code=422, detail="Destination needs a name.")
-    if Destination.get_by_name(body.name):
+    if Destination.get_for_name(body.name):
         raise HTTPException(
             status_code=409, detail=f"Destination {body.name!r} already exists; remove it first."
         )

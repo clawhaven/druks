@@ -191,7 +191,7 @@ async def _deliver(rt, *, to, subject=None, reason="r", body="b", actions=None):
         rt,
         lambda: (
             Notification.create(
-                destination_id=Destination.get_by_name(to).id,
+                destination_id=Destination.get_for_name(to).id,
                 reason=reason,
                 body=body,
                 subject=subject or {"type": "notification_probe", "id": 1},

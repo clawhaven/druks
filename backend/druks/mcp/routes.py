@@ -54,7 +54,7 @@ async def add_mcp_server(body: CreateMcpServerRequest) -> McpServerResponse:
             status_code=409,
             detail=f"MCP server {body.name!r} is built-in; configure it instead of adding it.",
         )
-    if McpServer.get_by_name(body.name):
+    if McpServer.get_for_name(body.name):
         raise HTTPException(
             status_code=409, detail=f"MCP server {body.name!r} already exists; remove it first."
         )
@@ -81,7 +81,7 @@ async def install_mcp_server(body: InstallMcpServerRequest, request: Request) ->
             status_code=409,
             detail=f"MCP server {body.name!r} is built-in; configure it instead of adding it.",
         )
-    if McpServer.get_by_name(body.name):
+    if McpServer.get_for_name(body.name):
         raise HTTPException(
             status_code=409, detail=f"MCP server {body.name!r} already exists; remove it first."
         )
@@ -155,11 +155,11 @@ async def remove_mcp_server(name: str) -> None:
         raise HTTPException(
             status_code=409, detail=f"MCP server {name!r} is managed by druks; disable it instead."
         )
-    server = McpServer.get_by_name(name)
+    server = McpServer.get_for_name(name)
     if not server:
         raise HTTPException(status_code=404, detail=f"MCP server {name!r} not found")
     server.delete()
-    if grant := McpOauthGrant.get_by_server(name):
+    if grant := McpOauthGrant.get_for_server(name):
         # An orphan grant would revive as this name's credential on re-add.
         grant.delete()
         await oauth.evict_access_token(name)
@@ -217,7 +217,7 @@ async def oauth_callback(state: str = "", code: str = "", error: str = "") -> HT
 
 @router.delete("/{name}/grant", status_code=204)
 async def disconnect_mcp_server(name: str) -> None:
-    grant = McpOauthGrant.get_by_server(name)
+    grant = McpOauthGrant.get_for_server(name)
     if not grant:
         raise HTTPException(status_code=404, detail=f"MCP server {name!r} has no grant.")
     grant.delete()

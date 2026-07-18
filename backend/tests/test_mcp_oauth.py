@@ -195,7 +195,7 @@ async def test_complete_connect_exchanges_code_and_stores_the_grant(auth_server,
     name = await oauth.complete_connect(state=state, code="code-1")
 
     assert name == _NAME
-    grant = McpOauthGrant.get_by_server(_NAME)
+    grant = McpOauthGrant.get_for_server(_NAME)
     assert grant.refresh_token.decrypt() == "rt-1"
     assert grant.resource == _SERVER_URL
     assert grant.client_id == "client-123"
@@ -225,7 +225,7 @@ async def test_complete_connect_without_refresh_token_stores_nothing(auth_server
 
     with pytest.raises(OauthConnectError, match="no refresh token"):
         await oauth.complete_connect(state=state, code="code-1")
-    assert not McpOauthGrant.get_by_server(_NAME)
+    assert not McpOauthGrant.get_for_server(_NAME)
 
 
 # --- mint: cache, refresh, rotation, eviction -------------------------------
@@ -248,7 +248,7 @@ async def test_mint_refreshes_on_cache_miss_and_persists_rotation(auth_server, d
     assert refresh["refresh_token"] == "rt-old"
     assert refresh["resource"] == _SERVER_URL
     # Rotation: the provider's new refresh token replaced the stored one.
-    assert McpOauthGrant.get_by_server(_NAME).refresh_token.decrypt() == "rt-new"
+    assert McpOauthGrant.get_for_server(_NAME).refresh_token.decrypt() == "rt-new"
 
     # A second mint within the TTL reuses the cache — no second refresh.
     assert await oauth.mint_access_token(_NAME) == "at-2"
@@ -381,9 +381,9 @@ async def test_callback_route_completes_the_connect(
         # The page notifies the opener tab, then closes itself.
         assert "BroadcastChannel('druks-mcp-connect')" in page.text
         assert "window.close()" in page.text
-        assert McpOauthGrant.get_by_server(_NAME)
+        assert McpOauthGrant.get_for_server(_NAME)
         # Connecting is the explicit "use this server" — it enables too.
-        assert McpServer.get_by_name(_NAME).is_enabled is True
+        assert McpServer.get_for_name(_NAME).is_enabled is True
 
         # Consent denied / unknown state both land loudly, storing nothing.
         assert (
@@ -410,11 +410,11 @@ async def test_disconnect_route_drops_grant_and_cache(
 
     with TestClient(configure_app_for_test(settings=make_settings(tmp_path))) as client:
         assert client.delete(f"/api/mcp-servers/{_NAME}/grant").status_code == 204
-        assert not McpOauthGrant.get_by_server(_NAME)
+        assert not McpOauthGrant.get_for_server(_NAME)
         assert not await get_client().get(f"{OAUTH_ACCESS_TOKEN_PREFIX}{_NAME}")
         # The mirror of connect-enables: no grant, no calls, so no dead entry
         # riding into VMs.
-        assert McpServer.get_by_name(_NAME).is_enabled is False
+        assert McpServer.get_for_name(_NAME).is_enabled is False
         assert client.delete(f"/api/mcp-servers/{_NAME}/grant").status_code == 404
 
 

@@ -547,7 +547,7 @@ def seed_agent_run(
     session = db_session()
     if workflow_id is None:
         if work_item_id is None:
-            project = Project.get_by_repo(repo)
+            project = Project.get_for_repo(repo)
             if project is None:
                 project = Project.create(name=repo)
                 ProjectRepo.create(project_id=project.id, full_name=repo)
@@ -617,7 +617,7 @@ def make_test_work_item(*, repo: str, **kwargs):
     creates the chain. Extra kwargs flow into ``WorkItem.create``."""
     from druks.build.models import Project, ProjectRepo, WorkItem
 
-    project = Project.get_by_repo(repo)
+    project = Project.get_for_repo(repo)
     if project is None:
         project = Project.create(name=repo)
         ProjectRepo.create(project_id=project.id, full_name=repo)

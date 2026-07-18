@@ -256,7 +256,7 @@ class BuildWorkflow(Workflow):
             return item.extension_config_snapshot
         policy = await RepoPolicy.resolve(self.input.repo)
         # A build dispatches against a work item whose repo is registered.
-        target = ProjectRepo.get_by_full_name(self.input.repo)
+        target = ProjectRepo.get_for_full_name(self.input.repo)
         return {
             "policy": policy.model_dump(mode="json"),
             "profile": target.effective_profile(),
@@ -499,7 +499,7 @@ class BuildWorkflow(Workflow):
     def related_repos(self) -> list[ProjectRepo]:
         # The project's sibling repos (the prompt reads full_name + purpose).
         target = (self.input.repo or "").strip().lower()
-        project = Project.get_by_repo(self.input.repo) if self.input.repo else None
+        project = Project.get_for_repo(self.input.repo) if self.input.repo else None
         if not project:
             return []
         return [
@@ -522,7 +522,7 @@ class BuildWorkflow(Workflow):
 
     @step
     async def _push_ticket_status(self, status: SemanticStatus) -> None:
-        work_item = WorkItem.get_by_repo_and_pr(
+        work_item = WorkItem.get_for_repo_and_pr(
             repo=self.input.repo,
             pr_number=self.pr_number,
         )
