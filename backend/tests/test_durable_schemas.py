@@ -8,7 +8,7 @@ def _run(
     id: str,
     kind: str,
     state: RunState,
-    input_request: dict | None = None,
+    input_gate: str | None = None,
     failure: str | None = None,
     failure_code: str | None = None,
 ) -> Run:
@@ -16,7 +16,7 @@ def _run(
         id=id,
         kind=kind,
         state=state.value,
-        input_request=input_request,
+        input_gate=input_gate,
         failure=failure,
         failure_code=failure_code,
     )
@@ -53,22 +53,22 @@ def test_subject_state_uses_the_latest_outcome_once_every_run_is_terminal():
     assert _status_of(runs).state == RunState.FINISHED
 
 
-def test_status_surfaces_the_newest_active_runs_gate_ask():
+def test_status_surfaces_the_newest_active_runs_gate():
     runs = [
-        _run("new", "build.build_workflow", RunState.PENDING_INPUT, {"label": "Approve plan"}),
-        _run("old", "build.build_workflow", RunState.PENDING_INPUT, {"label": "Answer questions"}),
+        _run("new", "build.build_workflow", RunState.PENDING_INPUT, "review"),
+        _run("old", "build.build_workflow", RunState.PENDING_INPUT, "scope_reply"),
     ]
-    assert _status_of(runs).ask_label == "Approve plan"
+    assert _status_of(runs).gate == "review"
 
 
-def test_status_carries_the_running_runs_kind_and_no_stale_ask():
+def test_status_carries_the_running_runs_kind_and_no_stale_gate():
     runs = [
         _run("new", "build.build_workflow", RunState.RUNNING),
-        _run("old", "build.build_workflow", RunState.PENDING_INPUT, {"label": "Approve plan"}),
+        _run("old", "build.build_workflow", RunState.PENDING_INPUT, "review"),
     ]
     status = _status_of(runs)
     assert status.kind == "build.build_workflow"
-    assert not status.ask_label
+    assert not status.gate
 
 
 def test_status_carries_the_latest_agent_call_agent():
@@ -81,12 +81,12 @@ def test_parked_status_carries_no_agent_even_when_calls_are_handed_in():
     # The detail read passes the parked run's calls; the fact stays consistent
     # with the board, where a parked row never queries them.
     runs = [
-        _run("new", "build.build_workflow", RunState.PENDING_INPUT, {"label": "Approve plan"}),
+        _run("new", "build.build_workflow", RunState.PENDING_INPUT, "review"),
     ]
     calls = [AgentCall(agent="implement")]
     status = _status_of(runs, calls)
     assert not status.agent
-    assert status.ask_label == "Approve plan"
+    assert status.gate == "review"
 
 
 def test_status_carries_the_gate_timeout_reason():

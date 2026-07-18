@@ -8,7 +8,7 @@ function status(overrides: Partial<SubjectStatus>): SubjectStatus {
     state: 'running',
     kind: 'build.scope',
     agent: null,
-    askLabel: null,
+    gate: null,
     failure: null,
     reason: null,
     ...overrides,
@@ -16,13 +16,20 @@ function status(overrides: Partial<SubjectStatus>): SubjectStatus {
 }
 
 describe('laneLabel', () => {
-  it('parked shows the declared ask', () => {
-    expect(laneLabel(status({ state: 'pending_input', askLabel: 'Approve the plan' }))).toBe(
-      'Approve the plan',
+  it('parked renders build’s line for the gate identity', () => {
+    expect(laneLabel(status({ state: 'pending_input', gate: 'scope_reply' }))).toBe(
+      'Reply on the ticket',
+    )
+    expect(laneLabel(status({ state: 'pending_input', gate: 'review_work' }))).toBe(
+      'Review implementation',
     )
   })
 
-  it('parked without an ask label falls back', () => {
+  it('an unmapped gate reads as a generic park', () => {
+    expect(laneLabel(status({ state: 'pending_input', gate: 'review' }))).toBe('Waiting on you')
+  })
+
+  it('parked without a gate falls back', () => {
     expect(laneLabel(status({ state: 'pending_input' }))).toBe('Waiting on you')
   })
 

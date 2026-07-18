@@ -41,8 +41,8 @@ export interface SubjectStatus {
   // The driving run's kind and, while running, its latest agent call's agent.
   kind: string | null
   agent: string | null
-  // A parked gate's declared ask label.
-  askLabel: string | null
+  // A parked run's gate identity; the extension maps it to its own words.
+  gate: string | null
   // The failed driving run's stop reason, and its machine classification
   // ("gate_timeout" = unanswered gate, not a crash).
   failure: string | null

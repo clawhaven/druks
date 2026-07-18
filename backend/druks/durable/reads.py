@@ -92,9 +92,6 @@ def _status(
     # stands. Facts only: the extension's UI renders its copy from them.
     driving_run = active_run or (runs[0] if runs else None)
     parked = bool(active_run) and active_run.state == RunState.PENDING_INPUT.value
-    ask = {}
-    if parked and active_run.input_request:
-        ask = active_run.get_ask()
     # ``agent`` is the *running* run's latest agent — a parked run's calls are
     # history, not the current step, whichever caller handed them in.
     agent = None
@@ -104,7 +101,7 @@ def _status(
         state=RunState(driving_run.state) if driving_run else RunState.SCHEDULED,
         kind=driving_run.kind if driving_run else None,
         agent=agent,
-        ask_label=ask.get("label"),
+        gate=active_run.input_gate if parked else None,
         failure=driving_run.failure if driving_run else None,
         reason=driving_run.failure_code if driving_run else None,
     )

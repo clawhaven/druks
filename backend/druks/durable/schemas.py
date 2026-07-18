@@ -178,8 +178,9 @@ class SubjectStatus(BaseResponse):
     # The driving run's kind and, while running, its latest agent call's agent.
     kind: str | None = None
     agent: str | None = None
-    # A parked gate's declared ask label — the author's own words at ``Gate.wait``.
-    ask_label: str | None = None
+    # A parked run's gate identity — the extension's UI maps it to its own
+    # words; the ask's content rides the timeline's ``input_request``.
+    gate: str | None = None
     # The stop reason of the run driving ``state`` — set only when that run is
     # terminal-failed (an active or finished subject carries none). Lets a board
     # render "why" inline without reaching into the timeline. ``reason`` is its

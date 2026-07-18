@@ -117,7 +117,7 @@ def test_parked_run_surfaces_needs_you(client: TestClient, db_session):
 
     detail = client.get("/api/faketest/thing/1").json()
     assert detail["status"]["state"] == "pending_input"
-    assert detail["status"]["askLabel"] == "Approve the plan"
+    assert detail["status"]["gate"] == "approve_plan"
     parked = detail["timeline"][-1]
     assert parked["inputRequest"] == {"label": "Approve the plan"}
 
@@ -157,7 +157,7 @@ def test_parked_board_row_skips_the_agent_call_query(client: TestClient, db_sess
     )
 
     rows = {row["summary"]["id"]: row for row in client.get("/api/faketest/thing").json()["rows"]}
-    assert rows["1"]["status"]["askLabel"] == "Approve the plan"
+    assert rows["1"]["status"]["gate"] == "approve_plan"
     assert queried == []
 
 
