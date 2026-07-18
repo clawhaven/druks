@@ -276,20 +276,22 @@ class ClaudeHarness(Harness):
         return parse_epoch_expiry(block.get("expiresAt"))
 
     @classmethod
-    def _oauth_headers(cls, token: OAuthToken) -> dict:
-        return {
+    def _usage_request(cls, token: OAuthToken) -> tuple[str, dict]:
+        headers = {
             "Authorization": f"Bearer {token.access_token}",
             "anthropic-beta": _OAUTH_BETA,
             "anthropic-version": _ANTHROPIC_VERSION,
         }
-
-    @classmethod
-    def _usage_request(cls, token: OAuthToken) -> tuple[str, dict]:
-        return _USAGE_URL, cls._oauth_headers(token)
+        return _USAGE_URL, headers
 
     @classmethod
     async def _models_request(cls, token: OAuthToken) -> tuple[str, dict]:
-        return _MODELS_URL, cls._oauth_headers(token)
+        headers = {
+            "Authorization": f"Bearer {token.access_token}",
+            "anthropic-beta": _OAUTH_BETA,
+            "anthropic-version": _ANTHROPIC_VERSION,
+        }
+        return _MODELS_URL, headers
 
     @classmethod
     def _parse_usage(cls, raw: str) -> ParsedUsage:

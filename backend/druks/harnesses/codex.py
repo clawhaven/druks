@@ -381,23 +381,25 @@ class CodexHarness(Harness):
         return jwt_expiry(access)
 
     @classmethod
-    def _chatgpt_headers(cls, token: CodexToken) -> dict:
+    def _usage_request(cls, token: CodexToken) -> tuple[str, dict]:
         headers = {
             "Authorization": f"Bearer {token.access_token}",
             "User-Agent": _CODEX_USER_AGENT,
         }
         if token.account_id:
             headers["ChatGPT-Account-Id"] = token.account_id
-        return headers
-
-    @classmethod
-    def _usage_request(cls, token: CodexToken) -> tuple[str, dict]:
-        return _CODEX_USAGE_URL, cls._chatgpt_headers(token)
+        return _CODEX_USAGE_URL, headers
 
     @classmethod
     async def _models_request(cls, token: CodexToken) -> tuple[str, dict]:
         version = await _latest_cli_version()
-        return f"{_CODEX_MODELS_URL}?client_version={version}", cls._chatgpt_headers(token)
+        headers = {
+            "Authorization": f"Bearer {token.access_token}",
+            "User-Agent": _CODEX_USER_AGENT,
+        }
+        if token.account_id:
+            headers["ChatGPT-Account-Id"] = token.account_id
+        return f"{_CODEX_MODELS_URL}?client_version={version}", headers
 
     @classmethod
     def _parse_usage(cls, raw: str) -> ParsedUsage:

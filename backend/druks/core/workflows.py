@@ -4,7 +4,7 @@ from druks.harnesses.datastructures import RotationResult
 from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harnesses
 from druks.sandbox import gate
-from druks.user_settings.models import HarnessSettings
+from druks.user_settings.models import HarnessSettings, UserSettings
 from druks.workflows import Workflow
 
 logger = logging.getLogger(__name__)
@@ -26,17 +26,18 @@ class RefreshModels(Workflow):
     async def run(self) -> dict[str, object]:
         # Daily: model launches aren't 5-minute events, and every failure path
         # keeps the last stored list, so a missed tick costs nothing. The fetch
-        # is actor-less, so it runs with the fallback account's connection —
-        # any other of the harness's logins when the fallback has none.
+        # is actor-less, so the fallback account's login is preferred — but
+        # accounts are per provider email, so the fallback account rarely holds
+        # every harness; any of the harness's logins serves the same purpose.
+        fallback_id = UserSettings.get().fallback_account_id
         results = []
         for harness in get_harnesses():
-            fallback = HarnessConnection.get_for_account(harness.name, fallback=True)
             connections = HarnessConnection.list_for_harness(harness.name)
-            connection = fallback or next(iter(connections), None)
-            if connection:
-                results.append(
-                    await HarnessSettings.require(harness.name).refresh_models(connection)
-                )
+            if not connections:
+                continue
+            preferred = [c for c in connections if c.account_id == fallback_id]
+            settings = HarnessSettings.require(harness.name)
+            results.append(await settings.refresh_models((preferred or connections)[0]))
         return {"results": results}
 
 
