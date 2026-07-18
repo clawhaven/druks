@@ -7,6 +7,7 @@ from sqlalchemy import ForeignKey, Index, func, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from druks.build.enums import HandoffStatus
 from druks.db import Base, db_session
 from druks.durable.reads import get_subject_status
 from druks.durable.schemas import SubjectStatus
@@ -378,6 +379,16 @@ class WorkItem(Base):
             return None
         calls = AgentCall.list_for_subject("work_item", str(item.id))
         return calls[-1].sandbox_host_id if calls else None
+
+    def mark(self, status: HandoffStatus, *, event_payload: dict[str, Any] | None = None) -> None:
+        """One handoff transition: the build event whose ``type`` is the status,
+        then the lane — the pairing lives here, not open-coded at call sites.
+        ``set_status`` stays beneath it: the ``None`` clear emits no event."""
+        # cycle: the extension imports this module at file scope.
+        from druks.build.extension import Build
+
+        Build.record_event(type=status, subject=self.subject_for(self.id), payload=event_payload)
+        self.set_status(status)
 
     def set_status(self, status: str | None) -> None:
         self.status = status
