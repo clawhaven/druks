@@ -2289,8 +2289,13 @@ input.set-select { background-image: none; padding-right: 12px; }
 .landing-busy { display: flex; align-items: center; gap: 11px; font-size: 14px; color: var(--text-mid); }
 .landing-spin { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border-loud); border-top-color: var(--fam); animation: landing-spin 800ms linear infinite; }
 @keyframes landing-spin { to { transform: rotate(360deg); } }
-.landing-panel .hr-conn-flow { background: none; border: none; padding: 0; gap: 14px; }
-.landing-panel .hr-conn-step { font-size: 13.5px; }
+.landing-panel .hr-conn-flow { background: none; border: none; padding: 0; gap: 18px; }
+.landing-panel .hr-conn-step { display: block; position: relative; padding-left: 32px; font-size: 13.5px; line-height: 1.6; }
+.landing-panel .hr-conn-num { position: absolute; left: 0; top: 2px; width: 20px; height: 20px; font-size: 11px; }
+.landing-panel .hr-conn-step a { white-space: nowrap; }
+.landing-panel .hr-conn-paste { display: flex; gap: 10px; }
+.landing-panel .hr-conn-input { padding: 10px 12px; border-radius: 8px; }
+.landing-panel .hr-conn-btn { padding: 9px 16px; border-radius: 8px; font-size: 12px; }
 .landing-cancel { margin-top: 22px; width: 100%; padding: 11px 18px; border-radius: 10px; font-size: 13.5px; font-weight: 600; color: var(--text-mid); border: 1px solid var(--border-loud); transition: all 160ms ease; }
 .landing-cancel:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
 .landing-cancel:disabled { opacity: 0.45; cursor: default; }
