@@ -106,7 +106,7 @@ if [ -n "${GHCR_TOKEN:-}" ]; then
   echo "$GHCR_TOKEN" | docker login ghcr.io -u token --password-stdin >/dev/null
 fi
 
-BACKEND_IMAGE="ghcr.io/clawhaven/druks:$IMAGE_TAG"
+BACKEND_IMAGE="ghcr.io/czpython/druks:$IMAGE_TAG"
 echo "→ pulling $BACKEND_IMAGE"
 docker pull -q "$BACKEND_IMAGE" >/dev/null
 

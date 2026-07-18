@@ -199,7 +199,7 @@ _LOCAL_SECTION = Section(
         # and reads its own env there — nothing in this file configures it.
         Entry("DRUKS_SANDBOX_SERVICE_URL", "http://127.0.0.1:8000"),
         Entry("DRUKS_SANDBOX_SERVICE_TOKEN", "dev-token"),
-        Entry("DRUKS_SANDBOX_IMAGE", "ghcr.io/clawhaven/druks-sandbox:latest"),
+        Entry("DRUKS_SANDBOX_IMAGE", "ghcr.io/czpython/druks-sandbox:latest"),
     ),
     trailer=(
         "# Sandboxes are local Docker containers. Run drukbox on the host so\n"

@@ -141,7 +141,7 @@ Drukbox on the host as described in [Full local setup](full-local.md) and set:
 ```dotenv
 DRUKS_SANDBOX_SERVICE_URL=http://127.0.0.1:8000
 DRUKS_SANDBOX_SERVICE_TOKEN=dev-token
-DRUKS_SANDBOX_IMAGE=ghcr.io/clawhaven/druks-sandbox:latest
+DRUKS_SANDBOX_IMAGE=ghcr.io/czpython/druks-sandbox:latest
 ```
 
 `uv run druks doctor --sandbox` creates a real host. Run it deliberately; it is
