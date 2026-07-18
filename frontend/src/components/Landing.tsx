@@ -34,8 +34,7 @@ export function Landing({ onSignedIn }: { onSignedIn: (account: Account) => void
         <div className="landing-head">
           <h1>Connect a harness to sign in</h1>
           <p>
-            There's no password here — <b>connecting the coding subscription your runs will use is the login</b>. Pick
-            a harness to authorize.
+            druks runs agents on your own coding subscription. <b>Connecting one signs you in</b>.
           </p>
         </div>
         <div className="landing-stage">
