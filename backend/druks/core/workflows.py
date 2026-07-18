@@ -4,6 +4,7 @@ from druks.harnesses.datastructures import RotationResult
 from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harnesses
 from druks.sandbox import gate
+from druks.user_settings.models import HarnessSettings
 from druks.workflows import Workflow
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,26 @@ class RefreshTokens(Workflow):
         # codex ~10d at <24h), this keeps both tokens alive with a wide margin
         # while doing almost nothing on most ticks.
         return await _refresh()
+
+
+class RefreshModels(Workflow):
+    every = "0 6 * * *"
+
+    async def run(self) -> dict[str, object]:
+        # Daily: model launches aren't 5-minute events, and every failure path
+        # keeps the last stored list, so a missed tick costs nothing. The fetch
+        # is actor-less, so it runs with the fallback account's connection —
+        # any other of the harness's logins when the fallback has none.
+        results = []
+        for harness in get_harnesses():
+            fallback = HarnessConnection.get_for_account(harness.name, fallback=True)
+            connections = HarnessConnection.list_for_harness(harness.name)
+            connection = fallback or next(iter(connections), None)
+            if connection:
+                results.append(
+                    await HarnessSettings.require(harness.name).refresh_models(connection)
+                )
+        return {"results": results}
 
 
 async def _refresh() -> dict[str, object]:

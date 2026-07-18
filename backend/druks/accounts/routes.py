@@ -8,7 +8,7 @@ from druks.harnesses.base import Harness
 from druks.harnesses.exceptions import LoginError
 from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harness
-from druks.user_settings.models import UserSettings
+from druks.user_settings.models import HarnessSettings, UserSettings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -80,13 +80,15 @@ async def complete_login(
     settings = UserSettings.get()
     if not settings.fallback_account_id:
         settings.set_fallback_account(account.id)
-    HarnessConnection.connect(
+    connection = HarnessConnection.connect(
         harness=harness.name,
         account=account,
         payload=completed.payload,
         expires_at=completed.expires_at,
         provider_email=completed.provider_email,
     )
+    # Fresh picker right after login; failures are tagged inside, never raised.
+    await HarnessSettings.require(harness.name).refresh_models(connection)
     old_token = request.cookies.get(sessions.SESSION_COOKIE)
     if old_token:
         await sessions.drop_session(old_token)  # login rotates the token

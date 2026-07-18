@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+import httpx
+
 from druks.sandbox.datastructures import (
     AgentInvocation,
     Credentials,
@@ -22,8 +24,8 @@ from druks.skills.models import Skill
 
 from .artifacts import write_cost
 from .base import Harness, check_returncode, jwt_claims, jwt_expiry, post_token
-from .datastructures import CodexToken, ParsedMetric, ParsedUsage
-from .exceptions import HarnessError, OAuthTokenError
+from .datastructures import CodexToken, ParsedMetric, ParsedModels, ParsedUsage
+from .exceptions import HarnessError, ModelsRequestError, OAuthTokenError
 from .subprocess import read_result_json
 
 logger = logging.getLogger(__name__)
@@ -41,6 +43,13 @@ _TOKEN_COUNT_MARKERS = ('"type":"token_count"', '"type": "token_count"')
 # extension. Returns the same numbers /status shows without a completion.
 _CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 _CODEX_USER_AGENT = "codex-cli"
+# Codex model-list endpoint. ``client_version`` is required and the server
+# returns only models with ``minimal_client_version <= client_version``, so
+# the value is resolved live from the same npm discovery the CLI's own update
+# checker uses — a pinned constant would silently shrink the list as it aged.
+_CODEX_MODELS_URL = "https://chatgpt.com/backend-api/codex/models"
+_NPM_LATEST_URL = "https://registry.npmjs.org/@openai%2fcodex/latest"
+_NPM_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -372,14 +381,23 @@ class CodexHarness(Harness):
         return jwt_expiry(access)
 
     @classmethod
-    def _usage_request(cls, token: CodexToken) -> tuple[str, dict]:
+    def _chatgpt_headers(cls, token: CodexToken) -> dict:
         headers = {
             "Authorization": f"Bearer {token.access_token}",
             "User-Agent": _CODEX_USER_AGENT,
         }
         if token.account_id:
             headers["ChatGPT-Account-Id"] = token.account_id
-        return _CODEX_USAGE_URL, headers
+        return headers
+
+    @classmethod
+    def _usage_request(cls, token: CodexToken) -> tuple[str, dict]:
+        return _CODEX_USAGE_URL, cls._chatgpt_headers(token)
+
+    @classmethod
+    async def _models_request(cls, token: CodexToken) -> tuple[str, dict]:
+        version = await _latest_cli_version()
+        return f"{_CODEX_MODELS_URL}?client_version={version}", cls._chatgpt_headers(token)
 
     @classmethod
     def _parse_usage(cls, raw: str) -> ParsedUsage:
@@ -416,6 +434,35 @@ class CodexHarness(Harness):
             week=week,
             raw=raw,
         )
+
+    @classmethod
+    def _parse_models(cls, raw: str) -> ParsedModels:
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return ParsedModels(ok=False, error="unparseable", raw=raw)
+        models = data.get("models") if isinstance(data, dict) else None
+        if not isinstance(models, list):
+            return ParsedModels(ok=False, error="unexpected_payload", raw=raw)
+        entries = tuple(
+            {
+                "id": model["slug"],
+                "label": model.get("display_name") or model["slug"],
+                "efforts": [
+                    level["effort"]
+                    for level in model.get("supported_reasoning_levels") or []
+                    if isinstance(level, dict) and level.get("effort")
+                ],
+                "minimal_client_version": model.get("minimal_client_version"),
+            }
+            for model in models
+            if isinstance(model, dict) and model.get("slug") and model.get("visibility") == "list"
+        )
+        if not entries:
+            # A 200 with nothing selectable is what a stale-low client_version
+            # produces — never let it read as "no models".
+            return ParsedModels(ok=False, error="empty_list", raw=raw)
+        return ParsedModels(ok=True, entries=entries, raw=raw)
 
     def _build_codex_wrapper(
         self,
@@ -630,6 +677,27 @@ class CodexHarness(Harness):
             extra_config_dirs=dirs,
             extra_dir_excludes={".codex/skills": Skill.disabled_excludes()},
         )
+
+
+async def _latest_cli_version() -> str:
+    """The npm ``dist-tags.latest`` of ``@openai/codex`` — the same discovery
+    the CLI's own update checker does. Unresolvable raises
+    :class:`ModelsRequestError`: fetching with a guessed-low ``client_version``
+    would silently shrink the model list, so not fetching is the safe move."""
+    try:
+        async with httpx.AsyncClient(timeout=_NPM_TIMEOUT_SECONDS) as client:
+            response = await client.get(_NPM_LATEST_URL)
+    except httpx.HTTPError as exc:
+        raise ModelsRequestError("version_unresolved") from exc
+    if response.status_code != 200:
+        raise ModelsRequestError("version_unresolved")
+    try:
+        version = response.json().get("version")
+    except ValueError as exc:
+        raise ModelsRequestError("version_unresolved") from exc
+    if not version:
+        raise ModelsRequestError("version_unresolved")
+    return version
 
 
 def _codex_window(block: object) -> ParsedMetric | None:

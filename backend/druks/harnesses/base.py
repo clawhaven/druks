@@ -27,6 +27,7 @@ from .datastructures import (
     CompletedLogin,
     HarnessRunResult,
     OAuthToken,
+    ParsedModels,
     ParsedUsage,
     RotationResult,
     SandboxSettings,
@@ -36,6 +37,7 @@ from .exceptions import (
     HarnessError,
     HarnessNotConnectedError,
     LoginError,
+    ModelsRequestError,
     OAuthTokenError,
 )
 from .models import HarnessConnection
@@ -511,6 +513,53 @@ class Harness(ABC):
     @abstractmethod
     def _parse_usage(cls, raw: str) -> ParsedUsage:
         """Map the usage endpoint's JSON body into :class:`ParsedUsage`."""
+
+    @classmethod
+    async def fetch_models(cls, connection: HarnessConnection) -> ParsedModels:
+        """Fetch + parse the provider's selectable-model list for the settings
+        picker. Auth/HTTP failures collapse to a ``ParsedModels(ok=False,
+        error=<tag>)`` so they never look like 'no models' — the stored list
+        only ever advances, it is never wiped by a bad fetch."""
+        try:
+            token = cls.load_token(connection)
+        except OAuthTokenError as exc:
+            return ParsedModels(ok=False, error=exc.tag)
+
+        try:
+            url, headers = await cls._models_request(token)
+        except ModelsRequestError as exc:
+            return ParsedModels(ok=False, error=exc.tag)
+        try:
+            async with httpx.AsyncClient(timeout=_USAGE_TIMEOUT_SECONDS) as client:
+                response = await client.get(url, headers=headers)
+        except httpx.TimeoutException:
+            return ParsedModels(ok=False, error="timeout")
+        except httpx.HTTPError as exc:
+            logger.warning("models request failed for %s: %s", cls.name, exc, exc_info=True)
+            return ParsedModels(ok=False, error="network")
+
+        if response.status_code == 200:
+            return cls._parse_models(response.text)
+        tag = _error_tag(response.status_code)
+        logger.warning(
+            "models endpoint %s for %s: %s",
+            response.status_code,
+            cls.name,
+            response.text[:300],
+        )
+        return ParsedModels(ok=False, error=tag)
+
+    @classmethod
+    @abstractmethod
+    async def _models_request(cls, token: Token) -> tuple[str, dict]:
+        """Return (url, headers) for the model-list endpoint; raise
+        :class:`ModelsRequestError` when the request can't be built."""
+
+    @classmethod
+    @abstractmethod
+    def _parse_models(cls, raw: str) -> ParsedModels:
+        """Map the model-list endpoint's JSON body into :class:`ParsedModels`.
+        A payload offering nothing is a tagged error, never an ok-empty."""
 
 
 def _utc_now() -> datetime:

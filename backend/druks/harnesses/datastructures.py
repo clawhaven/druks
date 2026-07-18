@@ -72,6 +72,16 @@ class ParsedUsage:
 
 
 @dataclass(frozen=True)
+class ParsedModels:
+    ok: bool
+    error: str | None = None
+    # Picker entries: ``{"id", "label"}`` always; codex adds ``"efforts"``
+    # and ``"minimal_client_version"``.
+    entries: tuple[dict, ...] = ()
+    raw: str = field(default="", repr=False)
+
+
+@dataclass(frozen=True)
 class SandboxSettings:
     service_url: str
     service_token: str

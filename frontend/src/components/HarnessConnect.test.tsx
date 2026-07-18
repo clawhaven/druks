@@ -10,7 +10,7 @@ function harness(overrides: Partial<Harness> = {}): Harness {
     name: 'claude',
     provider: 'anthropic',
     model: 'claude-opus-4-7',
-    allowedModels: ['claude-opus-4-7'],
+    allowedModels: [{ id: 'claude-opus-4-7', label: 'Claude Opus 4.7' }],
     fastMode: false,
     effort: 'high',
     timeout: 1800,

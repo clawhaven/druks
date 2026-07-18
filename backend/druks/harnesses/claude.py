@@ -19,13 +19,14 @@ from druks.skills.models import Skill
 
 from .artifacts import call_dir, write_cost
 from .base import Harness, check_returncode, parse_epoch_expiry, post_token
-from .datastructures import OAuthToken, ParsedMetric, ParsedUsage, SandboxSettings
+from .datastructures import OAuthToken, ParsedMetric, ParsedModels, ParsedUsage, SandboxSettings
 from .exceptions import HarnessError, OAuthTokenError, StreamJsonError
 
 logger = logging.getLogger(__name__)
 
 
 _USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+_MODELS_URL = "https://api.anthropic.com/v1/models?limit=100"
 # Beta flag the Claude CLI sends for OAuth-scoped endpoints.
 _OAUTH_BETA = "oauth-2025-04-20"
 _ANTHROPIC_VERSION = "2023-06-01"
@@ -275,13 +276,20 @@ class ClaudeHarness(Harness):
         return parse_epoch_expiry(block.get("expiresAt"))
 
     @classmethod
-    def _usage_request(cls, token: OAuthToken) -> tuple[str, dict]:
-        headers = {
+    def _oauth_headers(cls, token: OAuthToken) -> dict:
+        return {
             "Authorization": f"Bearer {token.access_token}",
             "anthropic-beta": _OAUTH_BETA,
             "anthropic-version": _ANTHROPIC_VERSION,
         }
-        return _USAGE_URL, headers
+
+    @classmethod
+    def _usage_request(cls, token: OAuthToken) -> tuple[str, dict]:
+        return _USAGE_URL, cls._oauth_headers(token)
+
+    @classmethod
+    async def _models_request(cls, token: OAuthToken) -> tuple[str, dict]:
+        return _MODELS_URL, cls._oauth_headers(token)
 
     @classmethod
     def _parse_usage(cls, raw: str) -> ParsedUsage:
@@ -297,6 +305,24 @@ class ClaudeHarness(Harness):
             week=_claude_metric(data.get("seven_day")),
             raw=raw,
         )
+
+    @classmethod
+    def _parse_models(cls, raw: str) -> ParsedModels:
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return ParsedModels(ok=False, error="unparseable", raw=raw)
+        models = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(models, list):
+            return ParsedModels(ok=False, error="unexpected_payload", raw=raw)
+        entries = tuple(
+            {"id": model["id"], "label": model.get("display_name") or model["id"]}
+            for model in models
+            if isinstance(model, dict) and model.get("id")
+        )
+        if not entries:
+            return ParsedModels(ok=False, error="empty_list", raw=raw)
+        return ParsedModels(ok=True, entries=entries, raw=raw)
 
 
 def _oauth_block(data: dict) -> dict:
