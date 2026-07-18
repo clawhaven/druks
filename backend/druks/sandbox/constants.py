@@ -6,3 +6,8 @@
 MAX_AGENT_TIMEOUT_SECONDS = 65 * 60  # 65 min — the existing sandbox-run horizon
 SANDBOX_HOST_LEASE_SECONDS = 150 * 60  # 150 min — fits two back-to-back worst-case calls
 SANDBOX_HOST_ROTATE_BEFORE_SECONDS = MAX_AGENT_TIMEOUT_SECONDS + 10 * 60  # 75 min (65 + 10 margin)
+
+# The per-connection rotation gate in Redis: the flag that shuts the gate while
+# a refresh runs, and the zset of active users scored by expiry.
+ROTATING_PREFIX = "druks:sandbox:rotating:"
+GATE_USERS_PREFIX = "druks:sandbox:gate:users:"
