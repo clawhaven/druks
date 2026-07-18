@@ -380,17 +380,19 @@ class WorkItem(Base):
         calls = AgentCall.list_for_subject("work_item", str(item.id))
         return calls[-1].sandbox_host_id if calls else None
 
-    def mark(self, status: HandoffStatus, *, event_payload: dict[str, Any] | None = None) -> None:
-        """One handoff transition: the build event whose ``type`` is the status,
-        then the lane — the pairing lives here, not open-coded at call sites.
-        ``set_status`` stays beneath it: the ``None`` clear emits no event."""
-        # cycle: the extension imports this module at file scope.
-        from druks.build.extension import Build
+    def set_status(
+        self, status: HandoffStatus | None, *, event_payload: dict[str, Any] | None = None
+    ) -> None:
+        """The handoff-lane write. A non-None status is a milestone, so the
+        matching build event records first — the pairing is structural, not a
+        call-site convention. None clears the lane on (re)dispatch: no event."""
+        if status:
+            # cycle: the extension imports this module at file scope.
+            from druks.build.extension import Build
 
-        Build.record_event(type=status, subject=self.subject_for(self.id), payload=event_payload)
-        self.set_status(status)
-
-    def set_status(self, status: str | None) -> None:
+            Build.record_event(
+                type=status, subject=self.subject_for(self.id), payload=event_payload
+            )
         self.status = status
         self.updated_at = Base.utc_now()
         db_session().flush()
