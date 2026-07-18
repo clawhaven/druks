@@ -18,6 +18,9 @@ class UsageHarnessSummary(BaseResponse):
     # snapshot yet" (fresh install pre-first-poll) and "all parses
     # failed in the last snapshot".
     available: bool
+    # False renders the connect action — the account has no connection
+    # for this harness.
+    connected: bool
     plan_tier: str | None = None
     five_hour: UsageMetricSummary | None = None
     week: UsageMetricSummary | None = None
@@ -46,11 +49,6 @@ class UsageHarnessSummary(BaseResponse):
 class UsageResponse(BaseResponse):
     # One summary per registered harness, in registry order.
     harnesses: list[UsageHarnessSummary]
-    # Derived from PollUsage's schedule knobs so the panel can show
-    # enabled state and "next scrape in ~3m" hints without round-tripping
-    # the workflow-settings surface.
-    polling_enabled: bool
-    polling_interval_seconds: int
 
 
 class UsageHistoryPoint(BaseResponse):

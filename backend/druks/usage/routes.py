@@ -1,12 +1,14 @@
 from datetime import UTC, datetime, timedelta
 
-from croniter import croniter
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
+from druks.accounts.dependencies import current_account
+from druks.accounts.models import Account
 from druks.core.utils.time import operator_local_day
 from druks.db import db_session
 from druks.harnesses.artifacts import normalize_token_usage
+from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harnesses
 from druks.usage.models import UsageScrape
 from druks.usage.schemas import (
@@ -19,7 +21,6 @@ from druks.usage.schemas import (
     UsageResponse,
     UsageTodayResponse,
 )
-from druks.usage.workflows import PollUsage
 from druks.user_settings.models import UserSettings
 from druks.workflows import AgentCall
 
@@ -27,6 +28,9 @@ router = APIRouter(tags=["usage"])
 
 # The /today bucket for calls whose model no current harness claims.
 UNATTRIBUTED = "unattributed"
+
+# An open tab must not hammer the providers.
+_REFRESH_FLOOR_SECONDS = 60
 
 # When a snapshot crosses this age, the pill flips to a warning glyph
 # and the panel surfaces "scraper hasn't run in a while". Tunable but
@@ -48,22 +52,30 @@ _MAX_SPARK_POINTS = 72
     response_model=UsageResponse,
     response_model_by_alias=True,
 )
-async def get_usage() -> UsageResponse:
+async def get_usage(account: Account = Depends(current_account)) -> UsageResponse:
     now = datetime.now(UTC)
     return UsageResponse(
         harnesses=[
-            _summarize(UsageScrape.latest_for(h.name), name=h.name, now=now)
+            _summarize(
+                UsageScrape.latest_for(h.name, account.id),
+                name=h.name,
+                now=now,
+                connected=bool(HarnessConnection.get_for_account(h.name, account.id)),
+            )
             for h in get_harnesses()
         ],
-        polling_enabled=PollUsage.has_enabled_schedule(),
-        polling_interval_seconds=_poll_interval_seconds(now),
     )
 
 
-@router.post("/refresh", status_code=status.HTTP_202_ACCEPTED)
-async def refresh_usage() -> None:
-    # Fire-and-forget: the frontend polls GET /api/usage for the new row.
-    await PollUsage.start(subject=None)
+@router.post("/refresh")
+async def refresh_usage(account: Account = Depends(current_account)) -> None:
+    now = datetime.now(UTC)
+    for harness in get_harnesses():
+        connection = HarnessConnection.get_for_account(harness.name, account.id)
+        row = UsageScrape.latest_for(harness.name, account.id)
+        age = _age_seconds(row.scraped_at, now=now) if row else None
+        if connection and (age is None or age >= _REFRESH_FLOOR_SECONDS):
+            await harness.poll_usage(connection)
 
 
 @router.get(
@@ -71,10 +83,10 @@ async def refresh_usage() -> None:
     response_model=UsageHistoryResponse,
     response_model_by_alias=True,
 )
-async def get_usage_history() -> UsageHistoryResponse:
+async def get_usage_history(account: Account = Depends(current_account)) -> UsageHistoryResponse:
     now = datetime.now(UTC)
     return UsageHistoryResponse(
-        harnesses=[_harness_history(h.name, now=now) for h in get_harnesses()],
+        harnesses=[_harness_history(h.name, account.id, now=now) for h in get_harnesses()],
     )
 
 
@@ -83,7 +95,7 @@ async def get_usage_history() -> UsageHistoryResponse:
     response_model=UsageTodayResponse,
     response_model_by_alias=True,
 )
-async def get_usage_today() -> UsageTodayResponse:
+async def get_usage_today(account: Account = Depends(current_account)) -> UsageTodayResponse:
     # The shared operator-local-day boundary keeps this total identical to
     # the sys-strip's spend-today figure.
     timezone_name = UserSettings.get().timezone
@@ -99,6 +111,7 @@ async def get_usage_today() -> UsageTodayResponse:
                 AgentCall.cost_metadata,
                 AgentCall.finished_at,
             )
+            .where(AgentCall.account_id == account.id)
             .where(AgentCall.finished_at.is_not(None))
             .where(AgentCall.finished_at >= local_start.astimezone(UTC))
             .where(AgentCall.finished_at < (local_start + timedelta(days=1)).astimezone(UTC)),
@@ -144,8 +157,8 @@ async def get_usage_today() -> UsageTodayResponse:
     )
 
 
-def _harness_history(name: str, *, now: datetime) -> UsageHarnessHistory:
-    rows = UsageScrape.history_for(name, since=now - _WEEK_RANGE)
+def _harness_history(name: str, account_id: str, *, now: datetime) -> UsageHarnessHistory:
+    rows = UsageScrape.history_for(name, account_id, since=now - _WEEK_RANGE)
     five_hour_cutoff = now - _FIVE_HOUR_RANGE
     five_hour = [
         UsageHistoryPoint(t=row.scraped_at, pct=row.five_hour_percent_left)
@@ -181,13 +194,15 @@ def _summarize(
     *,
     name: str,
     now: datetime,
+    connected: bool,
 ) -> UsageHarnessSummary:
     if not row:
-        return UsageHarnessSummary(name=name, available=False)
+        return UsageHarnessSummary(name=name, available=False, connected=connected)
     age = _age_seconds(row.scraped_at, now=now)
     return UsageHarnessSummary(
         name=name,
         available=row.parse_ok,
+        connected=connected,
         plan_tier=row.plan_tier,
         five_hour=_metric(row.five_hour_percent_left, row.five_hour_resets_at),
         week=_metric(row.week_percent_left, row.week_resets_at),
@@ -204,17 +219,6 @@ def _metric(percent_left: int | None, resets_at: datetime | None) -> UsageMetric
     if percent_left is None and resets_at is None:
         return None
     return UsageMetricSummary(percent_left=percent_left, resets_at=resets_at)
-
-
-def _poll_interval_seconds(now: datetime) -> int:
-    # The panel's "next scrape in ~Nm" hint: the gap between the schedule's
-    # next two fires. The cron is always valid — the declared default is, and
-    # operator overrides are validated at write.
-    cron = PollUsage.get_schedule()
-    assert cron is not None  # every= is declared on PollUsage
-    fires = croniter(cron, now)
-    first = fires.get_next(datetime)
-    return int((fires.get_next(datetime) - first).total_seconds())
 
 
 def _age_seconds(scraped_at: datetime | None, *, now: datetime) -> int | None:

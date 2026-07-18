@@ -329,6 +329,8 @@ export interface UsageHarnessSummary {
   // and legends key off it.
   name: string
   available: boolean
+  /** The signed-in account has its own connection; false renders a connect action. */
+  connected: boolean
   planTier: string | null
   fiveHour: UsageMetric | null
   week: UsageMetric | null
@@ -345,8 +347,6 @@ export interface UsageHarnessSummary {
 
 export interface UsageResponse {
   harnesses: UsageHarnessSummary[]
-  pollingEnabled: boolean
-  pollingIntervalSeconds: number
 }
 
 export interface UsageHistoryPoint {

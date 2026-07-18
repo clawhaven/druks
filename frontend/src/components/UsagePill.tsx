@@ -33,7 +33,6 @@ export function UsagePill() {
   const { data, isLoading, isError } = useUsage()
 
   if (isLoading || isError || !data) return null
-  if (!data.pollingEnabled) return null
 
   return (
     <Link href="/usage" className="usage-pill mono dim" aria-label="subscription quota — open details">
@@ -96,6 +95,7 @@ function ageSuffix(usage: UsageHarnessSummary) {
 }
 
 function describeIdle(usage: UsageHarnessSummary): string {
+  if (!usage.connected) return 'not connected — connect in Settings'
   if (usage.error === 'not_installed') return 'CLI not installed'
   if (usage.error === 'auth_required') return 'not signed in'
   if (usage.error === 'timeout') return 'scrape timed out'

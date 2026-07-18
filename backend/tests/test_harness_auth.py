@@ -85,45 +85,38 @@ def _mock_get(monkeypatch, response):
 
 
 def test_claude_load_token(db_session):
-    _seed_claude(access="live", expires_at=_NOW + timedelta(hours=2))
-    token = ClaudeHarness.load_token(now=_NOW)
+    connection = _seed_claude(access="live", expires_at=_NOW + timedelta(hours=2))
+    token = ClaudeHarness.load_token(connection, now=_NOW)
     assert token.access_token == "live"
     assert token.subscription_type == "max"
     assert "user:profile" in token.scopes
 
 
 def test_claude_load_token_expired(db_session):
-    _seed_claude(expires_at=_NOW - timedelta(hours=1))
+    connection = _seed_claude(expires_at=_NOW - timedelta(hours=1))
     with pytest.raises(OAuthTokenError) as e:
-        ClaudeHarness.load_token(now=_NOW)
+        ClaudeHarness.load_token(connection, now=_NOW)
     assert e.value.tag == "token_expired"
 
 
-def test_claude_load_token_missing(db_session):
-    # No row => not connected.
-    with pytest.raises(OAuthTokenError) as e:
-        ClaudeHarness.load_token(now=_NOW)
-    assert e.value.tag == "no_credentials"
-
-
 def test_claude_load_token_no_access(db_session):
-    connect_harness(ClaudeHarness, {"claudeAiOauth": {"subscriptionType": "max"}})
+    connection = connect_harness(ClaudeHarness, {"claudeAiOauth": {"subscriptionType": "max"}})
     with pytest.raises(OAuthTokenError) as e:
-        ClaudeHarness.load_token(now=_NOW)
+        ClaudeHarness.load_token(connection, now=_NOW)
     assert e.value.tag == "no_token"
 
 
 def test_codex_load_token(db_session):
-    _seed_codex()
-    token = CodexHarness.load_token(now=_NOW)
+    connection = _seed_codex()
+    token = CodexHarness.load_token(connection, now=_NOW)
     assert "." in token.access_token
     assert token.account_id == "acc-1"
 
 
 def test_codex_load_token_expired(db_session):
-    _seed_codex(access=_jwt(int((_NOW - timedelta(hours=1)).timestamp())))
+    connection = _seed_codex(access=_jwt(int((_NOW - timedelta(hours=1)).timestamp())))
     with pytest.raises(OAuthTokenError) as e:
-        CodexHarness.load_token(now=_NOW)
+        CodexHarness.load_token(connection, now=_NOW)
     assert e.value.tag == "token_expired"
 
 
@@ -372,13 +365,13 @@ def test_reconnect_updates_the_existing_login_in_place(db_session):
 
 
 async def test_claude_fetch_usage_success(monkeypatch, db_session):
-    _seed_claude(access="tok", expires_at=_NOW + timedelta(hours=2))
+    connection = _seed_claude(access="tok", expires_at=_NOW + timedelta(hours=2))
     body = {
         "five_hour": {"utilization": 16.0, "resets_at": "2026-06-04T23:19:59+00:00"},
         "seven_day": {"utilization": 48.0, "resets_at": "2026-06-07T16:00:00+00:00"},
     }
     calls = _mock_get(monkeypatch, _resp(200, body))
-    parsed = await ClaudeHarness.fetch_usage(now=_NOW)
+    parsed = await ClaudeHarness.fetch_usage(connection, now=_NOW)
     assert parsed.ok is True
     assert parsed.five_hour.percent_left == 84
     assert parsed.week.percent_left == 52
@@ -387,23 +380,25 @@ async def test_claude_fetch_usage_success(monkeypatch, db_session):
 
 
 async def test_claude_fetch_usage_http_error(monkeypatch, db_session):
-    _seed_claude(access="tok", expires_at=_NOW + timedelta(hours=2))
+    connection = _seed_claude(access="tok", expires_at=_NOW + timedelta(hours=2))
     _mock_get(monkeypatch, _resp(403, {"error": "x"}))
-    parsed = await ClaudeHarness.fetch_usage(now=_NOW)
+    parsed = await ClaudeHarness.fetch_usage(connection, now=_NOW)
     assert parsed.ok is False
     assert parsed.error == "forbidden_scope"
 
 
-async def test_fetch_usage_no_credentials_skips_http(monkeypatch, db_session):
+async def test_fetch_usage_without_a_token_skips_http(monkeypatch, db_session):
+    # The connection exists but its payload carries no access token — never fetch.
+    connection = connect_harness(ClaudeHarness, {"claudeAiOauth": {}})
     calls = _mock_get(monkeypatch, _resp(200, {}))
-    parsed = await ClaudeHarness.fetch_usage(now=_NOW)
+    parsed = await ClaudeHarness.fetch_usage(connection, now=_NOW)
     assert parsed.ok is False
-    assert parsed.error == "no_credentials"
+    assert parsed.error == "no_token"
     assert calls == []  # no token => no request
 
 
 async def test_codex_fetch_usage_success(monkeypatch, db_session):
-    _seed_codex(account_id="acc-7")
+    connection = _seed_codex(account_id="acc-7")
     body = {
         "plan_type": "prolite",
         "rate_limit": {
@@ -412,7 +407,7 @@ async def test_codex_fetch_usage_success(monkeypatch, db_session):
         },
     }
     calls = _mock_get(monkeypatch, _resp(200, body))
-    parsed = await CodexHarness.fetch_usage(now=_NOW)
+    parsed = await CodexHarness.fetch_usage(connection, now=_NOW)
     assert parsed.ok is True
     assert parsed.plan_tier == "prolite"
     assert parsed.five_hour.percent_left == 61

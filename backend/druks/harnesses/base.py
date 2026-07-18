@@ -189,7 +189,7 @@ class Harness(ABC):
     @classmethod
     def get_credentials(cls) -> dict:
         """The fallback account's credential dict — for callers with no
-        selection (usage polling, doctor)."""
+        selection."""
         row = HarnessConnection.get_for_account(cls.name, fallback=True)
         data = dict(row.payload) if row else None
         if data:
@@ -274,14 +274,10 @@ class Harness(ABC):
         payload, provider-reported account email)."""
 
     @classmethod
-    def load_token(cls, *, now: datetime | None = None) -> Token:
-        """Read + validate the current access token, or raise
+    def load_token(cls, connection: HarnessConnection, *, now: datetime | None = None) -> Token:
+        """Read + validate ``connection``'s access token, or raise
         :class:`OAuthTokenError`. Read-only; never refreshes."""
-        try:
-            data = cls.get_credentials()
-        except HarnessNotConnectedError as exc:
-            raise OAuthTokenError("no_credentials", f"no stored {cls.name} credentials") from exc
-        token = cls._token_from_credentials(data)
+        token = cls._token_from_credentials(dict(connection.payload))
         moment = now or _utc_now()
         if token.expires_at and token.expires_at <= moment:
             raise OAuthTokenError(
@@ -422,13 +418,15 @@ class Harness(ABC):
         expiry. Raise ``ValueError`` if the response is unusable."""
 
     @classmethod
-    async def fetch_usage(cls, *, now: datetime | None = None) -> ParsedUsage:
-        """Fetch + parse this CLI's remaining-quota snapshot from its
+    async def fetch_usage(
+        cls, connection: HarnessConnection, *, now: datetime | None = None
+    ) -> ParsedUsage:
+        """Fetch + parse the connection's remaining-quota snapshot from its
         subscription endpoint. Auth/HTTP failures collapse to a
         ``ParsedUsage(ok=False, error=<tag>)`` so they never look like
         '0 metrics'."""
         try:
-            token = cls.load_token(now=now)
+            token = cls.load_token(connection, now=now)
         except OAuthTokenError as exc:
             return ParsedUsage(ok=False, error=exc.tag)
 
@@ -454,17 +452,32 @@ class Harness(ABC):
         return ParsedUsage(ok=False, error=tag)
 
     @classmethod
-    async def poll_usage(cls) -> dict[str, object]:
-        """Fetch this harness's quota snapshot and persist it as a UsageScrape row."""
+    async def poll_usage(cls, connection: HarnessConnection) -> dict[str, object]:
+        """Fetch the connection's quota snapshot and persist it as that
+        account's UsageScrape row."""
+        account_id = connection.account_id
         try:
-            parsed = await cls.fetch_usage()
-        except Exception:  # noqa: BLE001 — one broken harness must not lose the others' snapshots
+            parsed = await cls.fetch_usage(connection)
+        except Exception:  # noqa: BLE001 — a crashed scrape records an error row, not a failed refresh
             logger.warning("usage fetch crashed for %s", cls.name, exc_info=True)
-            UsageScrape(harness=cls.name, parse_ok=False, raw_output=None, error="crashed").save()
-            return {"harness": cls.name, "status": "errored", "parse_ok": False, "error": "crashed"}
+            UsageScrape(
+                harness=cls.name,
+                account_id=account_id,
+                parse_ok=False,
+                raw_output=None,
+                error="crashed",
+            ).save()
+            return {
+                "harness": cls.name,
+                "account_id": account_id,
+                "status": "errored",
+                "parse_ok": False,
+                "error": "crashed",
+            }
 
         snapshot = UsageScrape(
             harness=cls.name,
+            account_id=account_id,
             parse_ok=parsed.ok,
             raw_output=parsed.raw[-8000:] if parsed.raw else None,  # cap to avoid bloat
             error=parsed.error if not parsed.ok else None,
@@ -480,6 +493,7 @@ class Harness(ABC):
         snapshot.save()
         return {
             "harness": cls.name,
+            "account_id": account_id,
             "status": "recorded",
             "parse_ok": parsed.ok,
             "error": parsed.error if not parsed.ok else None,

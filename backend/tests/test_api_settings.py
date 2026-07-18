@@ -307,18 +307,18 @@ def _extension(client: TestClient, name: str) -> dict:
     return next(m for m in body["extensions"] if m["name"] == name)
 
 
-def _poll_usage_fields(client: TestClient) -> dict:
-    workflows = {w["kind"]: w for w in _extension(client, "usage")["workflows"]}
-    return {f["name"]: f for f in workflows["usage.poll_usage"]["fields"]}
+def _refresh_tokens_fields(client: TestClient) -> dict:
+    workflows = {w["kind"]: w for w in _extension(client, "core")["workflows"]}
+    return {f["name"]: f for f in workflows["core.refresh_tokens"]["fields"]}
 
 
 def test_scheduled_workflow_surfaces_schedule_fields(tmp_path: Path):
     """A workflow's every= surfaces as two ordinary settings fields on the
     extension that owns it."""
     with _build_client(tmp_path) as client:
-        fields = _poll_usage_fields(client)
-        assert fields["schedule"]["value"] == "*/5 * * * *"
-        assert fields["schedule"]["default"] == "*/5 * * * *"
+        fields = _refresh_tokens_fields(client)
+        assert fields["schedule"]["value"] == "*/15 * * * *"
+        assert fields["schedule"]["default"] == "*/15 * * * *"
         assert fields["schedule"]["overridden"] is False
         assert fields["schedule_enabled"]["value"] is True
         assert fields["schedule_enabled"]["type"] == "bool"
@@ -336,7 +336,7 @@ def test_schedule_override_persists_and_reconciles(tmp_path: Path, monkeypatch):
             "/api/settings/extensions",
             json={
                 "workflowSettings": {
-                    "usage.poll_usage": {
+                    "core.refresh_tokens": {
                         "schedule": "0 9 * * *",
                         "schedule_enabled": False,
                     }
@@ -345,7 +345,7 @@ def test_schedule_override_persists_and_reconciles(tmp_path: Path, monkeypatch):
         )
         assert patch.status_code == 200
         assert reconciled
-        fields = _poll_usage_fields(client)
+        fields = _refresh_tokens_fields(client)
         assert fields["schedule"]["value"] == "0 9 * * *"
         assert fields["schedule"]["overridden"] is True
         assert fields["schedule_enabled"]["value"] is False
@@ -356,7 +356,7 @@ def test_schedule_rejects_invalid_cron(tmp_path: Path):
     with _build_client(tmp_path) as client:
         patch = client.patch(
             "/api/settings/extensions",
-            json={"workflowSettings": {"usage.poll_usage": {"schedule": "not a cron"}}},
+            json={"workflowSettings": {"core.refresh_tokens": {"schedule": "not a cron"}}},
         )
         assert patch.status_code == 422
 
