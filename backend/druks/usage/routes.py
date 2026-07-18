@@ -1,12 +1,15 @@
 from datetime import UTC, datetime, timedelta
 
 from croniter import croniter
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 
+from druks.accounts.dependencies import current_account
+from druks.accounts.models import Account
 from druks.core.utils.time import operator_local_day
 from druks.db import db_session
 from druks.harnesses.artifacts import normalize_token_usage
+from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harnesses
 from druks.usage.models import UsageScrape
 from druks.usage.schemas import (
@@ -48,11 +51,16 @@ _MAX_SPARK_POINTS = 72
     response_model=UsageResponse,
     response_model_by_alias=True,
 )
-async def get_usage() -> UsageResponse:
+async def get_usage(account: Account = Depends(current_account)) -> UsageResponse:
     now = datetime.now(UTC)
     return UsageResponse(
         harnesses=[
-            _summarize(UsageScrape.latest_for(h.name), name=h.name, now=now)
+            _summarize(
+                UsageScrape.latest_for(h.name, account.id),
+                name=h.name,
+                now=now,
+                connected=bool(HarnessConnection.get_for_account(h.name, account.id)),
+            )
             for h in get_harnesses()
         ],
         polling_enabled=PollUsage.has_enabled_schedule(),
@@ -71,10 +79,10 @@ async def refresh_usage() -> None:
     response_model=UsageHistoryResponse,
     response_model_by_alias=True,
 )
-async def get_usage_history() -> UsageHistoryResponse:
+async def get_usage_history(account: Account = Depends(current_account)) -> UsageHistoryResponse:
     now = datetime.now(UTC)
     return UsageHistoryResponse(
-        harnesses=[_harness_history(h.name, now=now) for h in get_harnesses()],
+        harnesses=[_harness_history(h.name, account.id, now=now) for h in get_harnesses()],
     )
 
 
@@ -83,7 +91,7 @@ async def get_usage_history() -> UsageHistoryResponse:
     response_model=UsageTodayResponse,
     response_model_by_alias=True,
 )
-async def get_usage_today() -> UsageTodayResponse:
+async def get_usage_today(account: Account = Depends(current_account)) -> UsageTodayResponse:
     # The shared operator-local-day boundary keeps this total identical to
     # the sys-strip's spend-today figure.
     timezone_name = UserSettings.get().timezone
@@ -99,6 +107,7 @@ async def get_usage_today() -> UsageTodayResponse:
                 AgentCall.cost_metadata,
                 AgentCall.finished_at,
             )
+            .where(AgentCall.account_id == account.id)
             .where(AgentCall.finished_at.is_not(None))
             .where(AgentCall.finished_at >= local_start.astimezone(UTC))
             .where(AgentCall.finished_at < (local_start + timedelta(days=1)).astimezone(UTC)),
@@ -144,8 +153,8 @@ async def get_usage_today() -> UsageTodayResponse:
     )
 
 
-def _harness_history(name: str, *, now: datetime) -> UsageHarnessHistory:
-    rows = UsageScrape.history_for(name, since=now - _WEEK_RANGE)
+def _harness_history(name: str, account_id: str, *, now: datetime) -> UsageHarnessHistory:
+    rows = UsageScrape.history_for(name, account_id, since=now - _WEEK_RANGE)
     five_hour_cutoff = now - _FIVE_HOUR_RANGE
     five_hour = [
         UsageHistoryPoint(t=row.scraped_at, pct=row.five_hour_percent_left)
@@ -181,13 +190,15 @@ def _summarize(
     *,
     name: str,
     now: datetime,
+    connected: bool,
 ) -> UsageHarnessSummary:
     if not row:
-        return UsageHarnessSummary(name=name, available=False)
+        return UsageHarnessSummary(name=name, available=False, connected=connected)
     age = _age_seconds(row.scraped_at, now=now)
     return UsageHarnessSummary(
         name=name,
         available=row.parse_ok,
+        connected=connected,
         plan_tier=row.plan_tier,
         five_hour=_metric(row.five_hour_percent_left, row.five_hour_resets_at),
         week=_metric(row.week_percent_left, row.week_resets_at),

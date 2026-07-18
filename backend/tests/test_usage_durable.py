@@ -36,9 +36,10 @@ class _FakeHarness:
     name = "faketest"
 
     @staticmethod
-    async def poll_usage() -> dict[str, object]:
+    async def poll_usage(connection) -> dict[str, object]:
         UsageScrape(
             harness="faketest",
+            account_id=connection.account_id,
             parse_ok=True,
             five_hour_percent_left=73,
             week_percent_left=41,
@@ -65,8 +66,28 @@ def rt():
     from druks.usage import workflows as usage_workflows
 
     # The step reads get_harnesses at call time; the fake writes a scrape without
-    # real HTTP, so a scheduled tick during the test window is harmless too.
+    # real HTTP, so a scheduled tick during the test window is harmless too. The
+    # poll walks connected rows, so the fake harness needs a real connection.
     usage_workflows.get_harnesses = lambda: (_FakeHarness,)
+    from druks.accounts.models import Account
+    from druks.harnesses.models import HarnessConnection
+
+    seed = get_session(engine)
+    try:
+        account = Account(email="op@example.com")
+        seed.add(account)
+        seed.flush()
+        seed.add(
+            HarnessConnection(
+                harness="faketest",
+                account_id=account.id,
+                provider_email=account.email,
+                payload={"token": "t"},
+            )
+        )
+        seed.commit()
+    finally:
+        seed.close()
 
     os.environ["DRUKS_DATABASE_URL"] = URL
     init_dbos()

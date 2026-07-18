@@ -18,6 +18,9 @@ class UsageHarnessSummary(BaseResponse):
     # snapshot yet" (fresh install pre-first-poll) and "all parses
     # failed in the last snapshot".
     available: bool
+    # False renders the connect action — the account has no connection
+    # for this harness.
+    connected: bool
     plan_tier: str | None = None
     five_hour: UsageMetricSummary | None = None
     week: UsageMetricSummary | None = None

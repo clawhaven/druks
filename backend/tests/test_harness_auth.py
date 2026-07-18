@@ -372,13 +372,13 @@ def test_reconnect_updates_the_existing_login_in_place(db_session):
 
 
 async def test_claude_fetch_usage_success(monkeypatch, db_session):
-    _seed_claude(access="tok", expires_at=_NOW + timedelta(hours=2))
+    connection = _seed_claude(access="tok", expires_at=_NOW + timedelta(hours=2))
     body = {
         "five_hour": {"utilization": 16.0, "resets_at": "2026-06-04T23:19:59+00:00"},
         "seven_day": {"utilization": 48.0, "resets_at": "2026-06-07T16:00:00+00:00"},
     }
     calls = _mock_get(monkeypatch, _resp(200, body))
-    parsed = await ClaudeHarness.fetch_usage(now=_NOW)
+    parsed = await ClaudeHarness.fetch_usage(connection, now=_NOW)
     assert parsed.ok is True
     assert parsed.five_hour.percent_left == 84
     assert parsed.week.percent_left == 52
@@ -387,23 +387,25 @@ async def test_claude_fetch_usage_success(monkeypatch, db_session):
 
 
 async def test_claude_fetch_usage_http_error(monkeypatch, db_session):
-    _seed_claude(access="tok", expires_at=_NOW + timedelta(hours=2))
+    connection = _seed_claude(access="tok", expires_at=_NOW + timedelta(hours=2))
     _mock_get(monkeypatch, _resp(403, {"error": "x"}))
-    parsed = await ClaudeHarness.fetch_usage(now=_NOW)
+    parsed = await ClaudeHarness.fetch_usage(connection, now=_NOW)
     assert parsed.ok is False
     assert parsed.error == "forbidden_scope"
 
 
-async def test_fetch_usage_no_credentials_skips_http(monkeypatch, db_session):
+async def test_fetch_usage_without_a_token_skips_http(monkeypatch, db_session):
+    # The connection exists but its payload carries no access token — never fetch.
+    connection = connect_harness(ClaudeHarness, {"claudeAiOauth": {}})
     calls = _mock_get(monkeypatch, _resp(200, {}))
-    parsed = await ClaudeHarness.fetch_usage(now=_NOW)
+    parsed = await ClaudeHarness.fetch_usage(connection, now=_NOW)
     assert parsed.ok is False
-    assert parsed.error == "no_credentials"
+    assert parsed.error == "no_token"
     assert calls == []  # no token => no request
 
 
 async def test_codex_fetch_usage_success(monkeypatch, db_session):
-    _seed_codex(account_id="acc-7")
+    connection = _seed_codex(account_id="acc-7")
     body = {
         "plan_type": "prolite",
         "rate_limit": {
@@ -412,7 +414,7 @@ async def test_codex_fetch_usage_success(monkeypatch, db_session):
         },
     }
     calls = _mock_get(monkeypatch, _resp(200, body))
-    parsed = await CodexHarness.fetch_usage(now=_NOW)
+    parsed = await CodexHarness.fetch_usage(connection, now=_NOW)
     assert parsed.ok is True
     assert parsed.plan_tier == "prolite"
     assert parsed.five_hour.percent_left == 61

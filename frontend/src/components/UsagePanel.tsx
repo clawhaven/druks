@@ -733,6 +733,7 @@ function capitalize(s: string): string {
 }
 
 function describeIdle(usage: UsageHarnessSummary): string {
+  if (!usage.connected) return `connect ${usage.name} in Settings to see your quota`
   if (usage.error === 'not_installed') return `${usage.name} not installed`
   if (usage.error === 'auth_required') return 'not signed in'
   if (usage.error === 'timeout') return 'scrape timed out — try refresh'

@@ -96,6 +96,7 @@ function ageSuffix(usage: UsageHarnessSummary) {
 }
 
 function describeIdle(usage: UsageHarnessSummary): string {
+  if (!usage.connected) return 'not connected — connect in Settings'
   if (usage.error === 'not_installed') return 'CLI not installed'
   if (usage.error === 'auth_required') return 'not signed in'
   if (usage.error === 'timeout') return 'scrape timed out'
