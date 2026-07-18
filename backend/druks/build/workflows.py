@@ -522,7 +522,7 @@ class BuildWorkflow(Workflow):
 
     @step
     async def _push_ticket_status(self, status: SemanticStatus) -> None:
-        work_item = WorkItem.get_for_repo_and_pr(
+        work_item = WorkItem.get_for_pr(
             repo=self.input.repo,
             pr_number=self.pr_number,
         )

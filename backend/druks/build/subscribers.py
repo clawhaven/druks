@@ -89,7 +89,7 @@ async def route_pr_review(*, repo: str, pr_number: int, payload: dict) -> None:
 
 
 def _active_build_run_for_pr(repo: str, pr_number: int) -> "Run | None":
-    item = WorkItem.get_for_repo_and_pr(repo=repo, pr_number=pr_number)
+    item = WorkItem.get_for_pr(repo=repo, pr_number=pr_number)
     if not item:
         return None
     run = item.get_build_run()
@@ -105,7 +105,7 @@ async def observe_pr_closed(*, repo: str, pr_number: int, payload: dict) -> None
         repo=repo, pr_number=pr_number, branch=payload["branch"], include_terminal=True
     ):
         return
-    work_item = WorkItem.get_for_repo_and_pr(repo=repo, pr_number=pr_number)
+    work_item = WorkItem.get_for_pr(repo=repo, pr_number=pr_number)
     status = work_item.status if work_item else None
     if status == HandoffStatus.SHIPPED:
         return

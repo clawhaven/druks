@@ -120,7 +120,7 @@ class ProjectRepo(Base):
         db_session().flush()
 
     @classmethod
-    def get_for_bare_name(cls, name: str) -> "ProjectRepo | None":
+    def get_for_name(cls, name: str) -> "ProjectRepo | None":
         """Match a ticket signal against the bare repo name.
 
         Convention: a tracker project name (Linear) or a label names the
@@ -156,7 +156,7 @@ class ProjectRepo(Base):
         """
         for name in (project_name, *labels):
             if name:
-                row = cls.get_for_bare_name(name)
+                row = cls.get_for_name(name)
                 if row:
                     return row
         return None
@@ -264,7 +264,7 @@ class WorkItem(Base):
         return db_session().get(cls, work_item_id)
 
     @classmethod
-    def get_for_repo_and_pr(cls, *, repo: str, pr_number: int) -> "WorkItem | None":
+    def get_for_pr(cls, *, repo: str, pr_number: int) -> "WorkItem | None":
         stmt = (
             select(cls)
             .where(func.lower(cls.repo) == repo.lower(), cls.pr_number == pr_number)
@@ -274,7 +274,7 @@ class WorkItem(Base):
         return db_session().scalars(stmt).first()
 
     @classmethod
-    def get_for_repo_and_branch(cls, *, repo: str, branch: str) -> "WorkItem | None":
+    def get_for_branch(cls, *, repo: str, branch: str) -> "WorkItem | None":
         stmt = (
             select(cls)
             .where(func.lower(cls.repo) == repo.lower(), cls.branch == branch)
@@ -295,8 +295,8 @@ class WorkItem(Base):
         """Does an item druks owns match this PR/branch? ``include_terminal``
         also accepts items whose build run has finished — the close echo still
         needs to find a merged item that no longer has a live run."""
-        by_pr = cls.get_for_repo_and_pr(repo=repo, pr_number=pr_number) if pr_number else None
-        by_branch = cls.get_for_repo_and_branch(repo=repo, branch=branch) if branch else None
+        by_pr = cls.get_for_pr(repo=repo, pr_number=pr_number) if pr_number else None
+        by_branch = cls.get_for_branch(repo=repo, branch=branch) if branch else None
         for item in (by_pr, by_branch):
             if item and (include_terminal or item.has_live_build()):
                 return True
@@ -373,7 +373,7 @@ class WorkItem(Base):
         :class:`HostGone`, and the for_pr / token-rotation paths catch that and
         re-acquire or skip.
         """
-        item = cls.get_for_repo_and_pr(repo=repo, pr_number=pr_number)
+        item = cls.get_for_pr(repo=repo, pr_number=pr_number)
         if not item:
             return None
         calls = AgentCall.list_for_subject("work_item", str(item.id))
