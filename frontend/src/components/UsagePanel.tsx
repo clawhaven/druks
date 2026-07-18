@@ -58,17 +58,6 @@ export function UsagePanel() {
     return null // pill already shows nothing; panel staying quiet is fine
   }
 
-  if (!data.pollingEnabled) {
-    return (
-      <section className="us-col">
-        <header className="us-head mono dim">
-          <span className="us-head-title">usage</span>
-          <span>polling disabled in settings</span>
-        </header>
-      </section>
-    )
-  }
-
   async function handleRefresh() {
     setRefreshing(true)
     try {
@@ -78,8 +67,6 @@ export function UsagePanel() {
     }
   }
 
-  const interval = data.pollingIntervalSeconds
-  const intervalLabel = interval >= 60 ? `${Math.round(interval / 60)}m` : `${interval}s`
   const ages = data.harnesses.map((h) => h.ageSeconds).filter((v): v is number => v !== null)
   const updatedLabel = ages.length > 0 ? `updated ${formatAge(Math.min(...ages))} ago` : ''
   const harnessColor = harnessColors(data.harnesses.map((h) => h.name))
@@ -88,10 +75,6 @@ export function UsagePanel() {
     <section className="us-col">
       <header className="us-head">
         <span className="us-head-title">usage</span>
-        <span className="us-head-poll mono">
-          <span className="live-dot" />
-          polling every {intervalLabel}
-        </span>
         <span className="us-head-spacer" />
         <span className="us-head-updated mono">{updatedLabel}</span>
         <button

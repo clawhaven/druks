@@ -1,7 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from croniter import croniter
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
 from druks.accounts.dependencies import current_account
@@ -22,7 +21,6 @@ from druks.usage.schemas import (
     UsageResponse,
     UsageTodayResponse,
 )
-from druks.usage.workflows import PollUsage
 from druks.user_settings.models import UserSettings
 from druks.workflows import AgentCall
 
@@ -30,6 +28,11 @@ router = APIRouter(tags=["usage"])
 
 # The /today bucket for calls whose model no current harness claims.
 UNATTRIBUTED = "unattributed"
+
+# The refresh endpoint scrapes at most this often per connection — the
+# frontend tick drives it, this floor keeps an open tab from hammering
+# the providers.
+_REFRESH_FLOOR_SECONDS = 60
 
 # When a snapshot crosses this age, the pill flips to a warning glyph
 # and the panel surfaces "scraper hasn't run in a while". Tunable but
@@ -63,15 +66,20 @@ async def get_usage(account: Account = Depends(current_account)) -> UsageRespons
             )
             for h in get_harnesses()
         ],
-        polling_enabled=PollUsage.has_enabled_schedule(),
-        polling_interval_seconds=_poll_interval_seconds(now),
     )
 
 
-@router.post("/refresh", status_code=status.HTTP_202_ACCEPTED)
-async def refresh_usage() -> None:
-    # Fire-and-forget: the frontend polls GET /api/usage for the new row.
-    await PollUsage.start(subject=None)
+@router.post("/refresh")
+async def refresh_usage(account: Account = Depends(current_account)) -> None:
+    # The frontend tick is the only scrape driver: the viewer's own
+    # connections, floored so an open tab cannot hammer the providers.
+    now = datetime.now(UTC)
+    for harness in get_harnesses():
+        connection = HarnessConnection.get_for_account(harness.name, account.id)
+        row = UsageScrape.latest_for(harness.name, account.id)
+        age = _age_seconds(row.scraped_at, now=now) if row else None
+        if connection and (age is None or age >= _REFRESH_FLOOR_SECONDS):
+            await harness.poll_usage(connection)
 
 
 @router.get(
@@ -215,17 +223,6 @@ def _metric(percent_left: int | None, resets_at: datetime | None) -> UsageMetric
     if percent_left is None and resets_at is None:
         return None
     return UsageMetricSummary(percent_left=percent_left, resets_at=resets_at)
-
-
-def _poll_interval_seconds(now: datetime) -> int:
-    # The panel's "next scrape in ~Nm" hint: the gap between the schedule's
-    # next two fires. The cron is always valid — the declared default is, and
-    # operator overrides are validated at write.
-    cron = PollUsage.get_schedule()
-    assert cron is not None  # every= is declared on PollUsage
-    fires = croniter(cron, now)
-    first = fires.get_next(datetime)
-    return int((fires.get_next(datetime) - first).total_seconds())
 
 
 def _age_seconds(scraped_at: datetime | None, *, now: datetime) -> int | None:

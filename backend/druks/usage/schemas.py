@@ -49,11 +49,6 @@ class UsageHarnessSummary(BaseResponse):
 class UsageResponse(BaseResponse):
     # One summary per registered harness, in registry order.
     harnesses: list[UsageHarnessSummary]
-    # Derived from PollUsage's schedule knobs so the panel can show
-    # enabled state and "next scrape in ~3m" hints without round-tripping
-    # the workflow-settings surface.
-    polling_enabled: bool
-    polling_interval_seconds: int
 
 
 class UsageHistoryPoint(BaseResponse):

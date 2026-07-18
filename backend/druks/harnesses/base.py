@@ -189,7 +189,7 @@ class Harness(ABC):
     @classmethod
     def get_credentials(cls) -> dict:
         """The fallback account's credential dict — for callers with no
-        selection (usage polling, doctor)."""
+        selection."""
         row = HarnessConnection.get_for_account(cls.name, fallback=True)
         data = dict(row.payload) if row else None
         if data:
@@ -274,22 +274,10 @@ class Harness(ABC):
         payload, provider-reported account email)."""
 
     @classmethod
-    def load_token(
-        cls, connection: HarnessConnection | None = None, *, now: datetime | None = None
-    ) -> Token:
-        """Read + validate ``connection``'s access token (the fallback
-        account's when no row is given), or raise :class:`OAuthTokenError`.
-        Read-only; never refreshes."""
-        if connection:
-            data = dict(connection.payload)
-        else:
-            try:
-                data = cls.get_credentials()
-            except HarnessNotConnectedError as exc:
-                raise OAuthTokenError(
-                    "no_credentials", f"no stored {cls.name} credentials"
-                ) from exc
-        token = cls._token_from_credentials(data)
+    def load_token(cls, connection: HarnessConnection, *, now: datetime | None = None) -> Token:
+        """Read + validate ``connection``'s access token, or raise
+        :class:`OAuthTokenError`. Read-only; never refreshes."""
+        token = cls._token_from_credentials(dict(connection.payload))
         moment = now or _utc_now()
         if token.expires_at and token.expires_at <= moment:
             raise OAuthTokenError(

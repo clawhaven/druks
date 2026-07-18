@@ -85,45 +85,38 @@ def _mock_get(monkeypatch, response):
 
 
 def test_claude_load_token(db_session):
-    _seed_claude(access="live", expires_at=_NOW + timedelta(hours=2))
-    token = ClaudeHarness.load_token(now=_NOW)
+    connection = _seed_claude(access="live", expires_at=_NOW + timedelta(hours=2))
+    token = ClaudeHarness.load_token(connection, now=_NOW)
     assert token.access_token == "live"
     assert token.subscription_type == "max"
     assert "user:profile" in token.scopes
 
 
 def test_claude_load_token_expired(db_session):
-    _seed_claude(expires_at=_NOW - timedelta(hours=1))
+    connection = _seed_claude(expires_at=_NOW - timedelta(hours=1))
     with pytest.raises(OAuthTokenError) as e:
-        ClaudeHarness.load_token(now=_NOW)
+        ClaudeHarness.load_token(connection, now=_NOW)
     assert e.value.tag == "token_expired"
 
 
-def test_claude_load_token_missing(db_session):
-    # No row => not connected.
-    with pytest.raises(OAuthTokenError) as e:
-        ClaudeHarness.load_token(now=_NOW)
-    assert e.value.tag == "no_credentials"
-
-
 def test_claude_load_token_no_access(db_session):
-    connect_harness(ClaudeHarness, {"claudeAiOauth": {"subscriptionType": "max"}})
+    connection = connect_harness(ClaudeHarness, {"claudeAiOauth": {"subscriptionType": "max"}})
     with pytest.raises(OAuthTokenError) as e:
-        ClaudeHarness.load_token(now=_NOW)
+        ClaudeHarness.load_token(connection, now=_NOW)
     assert e.value.tag == "no_token"
 
 
 def test_codex_load_token(db_session):
-    _seed_codex()
-    token = CodexHarness.load_token(now=_NOW)
+    connection = _seed_codex()
+    token = CodexHarness.load_token(connection, now=_NOW)
     assert "." in token.access_token
     assert token.account_id == "acc-1"
 
 
 def test_codex_load_token_expired(db_session):
-    _seed_codex(access=_jwt(int((_NOW - timedelta(hours=1)).timestamp())))
+    connection = _seed_codex(access=_jwt(int((_NOW - timedelta(hours=1)).timestamp())))
     with pytest.raises(OAuthTokenError) as e:
-        CodexHarness.load_token(now=_NOW)
+        CodexHarness.load_token(connection, now=_NOW)
     assert e.value.tag == "token_expired"
 
 

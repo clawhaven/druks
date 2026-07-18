@@ -347,8 +347,6 @@ export interface UsageHarnessSummary {
 
 export interface UsageResponse {
   harnesses: UsageHarnessSummary[]
-  pollingEnabled: boolean
-  pollingIntervalSeconds: number
 }
 
 export interface UsageHistoryPoint {

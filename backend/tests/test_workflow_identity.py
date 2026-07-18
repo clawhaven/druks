@@ -11,7 +11,6 @@ from druks.extensions import loader as extensions_loader
 from druks.extensions.exceptions import MalformedExtension
 from druks.extensions.loader import register_workflow_package, resolve_workflow_extension
 from druks.extensions.registry import workflows
-from druks.usage.workflows import PollUsage
 from druks.workflows import Workflow, _log_run_event, step
 
 
@@ -97,12 +96,7 @@ def test_in_tree_identities_are_stable():
     assert Scope.kind == "build.scope"
     assert Profile.kind == "build.profile"
     assert RefreshTokens.kind == "core.refresh_tokens"
-    assert PollUsage.kind == "usage.poll_usage"
-    assert (BuildWorkflow.extension, RefreshTokens.extension, PollUsage.extension) == (
-        "build",
-        "core",
-        "usage",
-    )
+    assert (BuildWorkflow.extension, RefreshTokens.extension) == ("build", "core")
 
 
 def test_steps_capture_the_namespaced_kind():
