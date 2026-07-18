@@ -176,7 +176,7 @@ async def test_trigger_status_opens_build_on_the_scoped_work_item(tmp_path, monk
     refreshed = {}
     monkeypatch.setattr(
         subs.WorkItem,
-        "get_by_remote_key",
+        "get_for_remote_key",
         lambda *, source, remote_key: SimpleNamespace(
             id=7, repo="acme/acme-app", update=lambda **kw: refreshed.update(kw)
         ),
@@ -208,7 +208,7 @@ async def test_trigger_status_routes_an_unscoped_ticket_by_label(tmp_path, db_se
     )
 
     build.assert_awaited_once()
-    item = WorkItem.get_by_remote_key(source="jira", remote_key="SHRP-1")
+    item = WorkItem.get_for_remote_key(source="jira", remote_key="SHRP-1")
     assert build.await_args.kwargs["work_item_id"] == item.id
     assert item.repo == "octo/alfred"
     assert item.project_id == project.id

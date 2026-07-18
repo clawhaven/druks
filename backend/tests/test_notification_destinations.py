@@ -96,14 +96,14 @@ def test_create_get_list_delete_round_trip(db_session):
     alpha = Destination.create(name="alpha", kind="slack_webhook", url=_WEBHOOK_URL)
 
     assert Destination.get(beta.id).id == beta.id
-    assert Destination.get_by_name("alpha").id == alpha.id
+    assert Destination.get_for_name("alpha").id == alpha.id
     assert Destination.get("no-such-id") is None
-    assert Destination.get_by_name("no-such-name") is None
+    assert Destination.get_for_name("no-such-name") is None
     assert [destination.name for destination in Destination.list_all()] == ["alpha", "beta"]
     assert beta.is_enabled is True
 
     beta.delete()
-    assert Destination.get_by_name("beta") is None
+    assert Destination.get_for_name("beta") is None
     assert [destination.name for destination in Destination.list_all()] == ["alpha"]
 
 
@@ -113,7 +113,7 @@ def test_create_rejects_unknown_kind_without_echoing_the_url(db_session):
 
     assert "pagerduty" in str(excinfo.value)
     assert _WEBHOOK_URL not in str(excinfo.value)
-    assert Destination.get_by_name("pager") is None
+    assert Destination.get_for_name("pager") is None
 
 
 # --- routes: CRUD + redaction ---------------------------------------------

@@ -32,7 +32,7 @@ class SkillCollection(Base, Uuid7Pk):
         return db_session().get(cls, collection_id)
 
     @classmethod
-    def get_by_source(cls, source: str) -> "SkillCollection | None":
+    def get_for_source(cls, source: str) -> "SkillCollection | None":
         return db_session().execute(select(cls).where(cls.source == source)).scalar_one_or_none()
 
     @classmethod

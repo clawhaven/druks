@@ -45,7 +45,7 @@ class Destination(Base, Uuid7Pk):
         return db_session().get(cls, destination_id)
 
     @classmethod
-    def get_by_name(cls, name: str) -> "Destination | None":
+    def get_for_name(cls, name: str) -> "Destination | None":
         return db_session().execute(select(cls).where(cls.name == name)).scalar_one_or_none()
 
     @classmethod
@@ -144,7 +144,7 @@ class Notification(Base, Uuid7Pk):
         return list(db_session().scalars(stmt))
 
     @classmethod
-    def get_by_token(cls, token: str) -> "Notification | None":
+    def get_for_token(cls, token: str) -> "Notification | None":
         return (
             db_session()
             .execute(select(cls).where(cls.correlation_token == token))

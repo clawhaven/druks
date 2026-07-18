@@ -100,7 +100,7 @@ def test_collection_create_get_cascade_delete(db_session):
             InstalledSkill(name="beta", description="two", path="/p/beta", content_hash="b"),
         ],
     )
-    assert SkillCollection.get_by_source("https://github.com/o/r").id == collection.id
+    assert SkillCollection.get_for_source("https://github.com/o/r").id == collection.id
     assert Skill.installed_names() == {"alpha", "beta"}
     assert [c.name for c in SkillCollection.list_all()] == ["o/r"]
 

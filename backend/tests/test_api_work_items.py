@@ -96,7 +96,7 @@ def _ship(repo, pr_number):
     History, mirroring the merge handler."""
     from druks.events.models import Event
 
-    item = WorkItem.get_by_repo_and_pr(repo=repo, pr_number=pr_number)
+    item = WorkItem.get_for_pr(repo=repo, pr_number=pr_number)
     if item:
         Event.emit(type="shipped", subject=WorkItem.subject_for(item.id))
         item.set_status("shipped")

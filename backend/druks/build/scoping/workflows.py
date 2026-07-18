@@ -28,12 +28,10 @@ class Scope(Workflow):
         # The scoped label is the done marker — remove it to force a re-scope.
         if ticket.has_label(Build.settings().scoper_scoped_label):
             return None
-        item = WorkItem.get_by_remote_key(source=ticket.provider, remote_key=ticket.key)
+        item = WorkItem.get_for_remote_key(source=ticket.provider, remote_key=ticket.key)
         if not item:
-            target = ProjectRepo.get_by_ticket_signals(
-                project_name=ticket.project_name, labels=ticket.labels
-            )
-            project = Project.get_by_repo(target.full_name) if target else None
+            target = ProjectRepo.lookup(project_name=ticket.project_name, labels=ticket.labels)
+            project = Project.get_for_repo(target.full_name) if target else None
             if not project:
                 logger.info("No project routes %s; not scoping.", ticket.key)
                 return None
@@ -72,7 +70,7 @@ class Scope(Workflow):
             if r.full_name != item.repo
         ]
         # The ticket routed through this repo to exist, so it's registered.
-        target = ProjectRepo.get_by_full_name(item.repo)
+        target = ProjectRepo.get_for_repo(item.repo)
         settings = Build.settings()
         return {
             "target_repo": item.repo,

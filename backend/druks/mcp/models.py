@@ -44,7 +44,7 @@ class McpServer(Base, Uuid7Pk):
         return list(db_session().execute(select(cls).order_by(cls.name)).scalars())
 
     @classmethod
-    def get_by_name(cls, name: str) -> "McpServer | None":
+    def get_for_name(cls, name: str) -> "McpServer | None":
         return db_session().execute(select(cls).where(cls.name == name)).scalar_one_or_none()
 
     @classmethod
@@ -91,7 +91,7 @@ class McpServer(Base, Uuid7Pk):
             elif source == TokenSource.STATIC_FROM_ENV:
                 server["has_token"] = bool(os.environ.get(server["source_env_var"]))
             elif source == TokenSource.OAUTH:
-                server["has_token"] = bool(McpOauthGrant.get_by_server(server["name"]))
+                server["has_token"] = bool(McpOauthGrant.get_for_server(server["name"]))
             else:
                 server["has_token"] = bool(server["token"])
         return servers
@@ -106,7 +106,7 @@ class McpServer(Base, Uuid7Pk):
         # A built-in has no row until an operator changes its state; the enable
         # choice creates one, carrying the built-in's url. False means the name
         # is neither a row nor a catalog entry.
-        server = cls.get_by_name(name)
+        server = cls.get_for_name(name)
         if server:
             server.is_enabled = is_enabled
             return True
@@ -174,7 +174,7 @@ class McpOauthGrant(Base, Uuid7Pk):
     connected_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
 
     @classmethod
-    def get_by_server(cls, server_name: str) -> "McpOauthGrant | None":
+    def get_for_server(cls, server_name: str) -> "McpOauthGrant | None":
         return (
             db_session()
             .execute(select(cls).where(cls.server_name == server_name))
@@ -195,7 +195,7 @@ class McpOauthGrant(Base, Uuid7Pk):
         # Connecting again replaces the grant — the recovery path for a revoked
         # or rotten refresh token.
         session = db_session()
-        grant = cls.get_by_server(server_name)
+        grant = cls.get_for_server(server_name)
         if not grant:
             grant = cls(server_name=server_name)
             session.add(grant)
