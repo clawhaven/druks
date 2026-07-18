@@ -42,7 +42,7 @@ async def policy_push_reprofiles_the_repo(*, repo: str, paths: list, **_: object
     # profiled baseline.
     if ".druks/build/config.yml" not in paths:
         return
-    project_repo = ProjectRepo.get_for_full_name(repo)
+    project_repo = ProjectRepo.get_for_repo(repo)
     if not project_repo:
         return
     await Profile.start(
@@ -236,7 +236,7 @@ async def _dispatch_intake(source: str, payload: dict) -> None:
 
 async def _resolve_repo(source: str, payload: dict) -> tuple[str | None, int | None]:
     if source == "jira":
-        target = ProjectRepo.get_for_ticket_signals(
+        target = ProjectRepo.get_for_signals(
             project_name=payload["project_name"], labels=payload["labels"]
         )
         return (target.full_name, target.project_id) if target else (None, None)

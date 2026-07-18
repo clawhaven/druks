@@ -256,7 +256,7 @@ class BuildWorkflow(Workflow):
             return item.extension_config_snapshot
         policy = await RepoPolicy.resolve(self.input.repo)
         # A build dispatches against a work item whose repo is registered.
-        target = ProjectRepo.get_for_full_name(self.input.repo)
+        target = ProjectRepo.get_for_repo(self.input.repo)
         return {
             "policy": policy.model_dump(mode="json"),
             "profile": target.effective_profile(),

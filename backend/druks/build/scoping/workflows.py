@@ -30,7 +30,7 @@ class Scope(Workflow):
             return None
         item = WorkItem.get_for_remote_key(source=ticket.provider, remote_key=ticket.key)
         if not item:
-            target = ProjectRepo.get_for_ticket_signals(
+            target = ProjectRepo.get_for_signals(
                 project_name=ticket.project_name, labels=ticket.labels
             )
             project = Project.get_for_repo(target.full_name) if target else None
@@ -72,7 +72,7 @@ class Scope(Workflow):
             if r.full_name != item.repo
         ]
         # The ticket routed through this repo to exist, so it's registered.
-        target = ProjectRepo.get_for_full_name(item.repo)
+        target = ProjectRepo.get_for_repo(item.repo)
         settings = Build.settings()
         return {
             "target_repo": item.repo,

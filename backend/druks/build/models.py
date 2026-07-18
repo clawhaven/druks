@@ -136,12 +136,12 @@ class ProjectRepo(Base):
         return db_session().scalars(stmt).first()
 
     @classmethod
-    def get_for_full_name(cls, full_name: str) -> "ProjectRepo | None":
+    def get_for_repo(cls, full_name: str) -> "ProjectRepo | None":
         stmt = select(cls).where(func.lower(cls.full_name) == full_name.lower()).limit(1)
         return db_session().scalars(stmt).first()
 
     @classmethod
-    def get_for_ticket_signals(
+    def get_for_signals(
         cls,
         *,
         project_name: str | None,

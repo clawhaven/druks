@@ -10,7 +10,7 @@ def _register(db_session, *full_names):
 
 def _resolve(**signals):
     defaults = {"project_name": None, "labels": []}
-    return ProjectRepo.get_for_ticket_signals(**{**defaults, **signals})
+    return ProjectRepo.get_for_signals(**{**defaults, **signals})
 
 
 def test_project_name_wins_over_labels(db_session):
