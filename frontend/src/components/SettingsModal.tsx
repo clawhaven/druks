@@ -21,7 +21,7 @@ import { harnessColors } from '../lib/harnessColors'
 // its allowedModels — never a name-prefix guess, so a newly-installed harness and
 // its models resolve correctly with no frontend change.
 const harnessOfModel = (model: string, harnesses: Harness[]): string =>
-  harnesses.find((h) => h.allowedModels.includes(model))?.name ?? ''
+  harnesses.find((h) => h.allowedModels.some((m) => m.id === model))?.name ?? ''
 
 const TIMEOUTS = [600, 900, 1800, 3600]
 
@@ -541,7 +541,7 @@ function InheritCell({
             <Fragment key={h.name}>
               <div className="menu-group">{h.name}</div>
               {h.allowedModels.map((m) => (
-                <Opt key={m} sel={value === m} famColor={harnessColor[h.name]} main={m} onClick={() => pick(m)} />
+                <Opt key={m.id} sel={value === m.id} famColor={harnessColor[h.name]} main={m.label} onClick={() => pick(m.id)} />
               ))}
             </Fragment>
           ))}
@@ -707,8 +707,8 @@ function HarnessesPane({
                     <span className="set-field-label">default model</span>
                     <select className="set-select" value={h.model} onChange={(e) => onField(harness.name, { model: e.target.value })} disabled={busy}>
                       {harness.allowedModels.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
+                        <option key={m.id} value={m.id}>
+                          {m.label}
                         </option>
                       ))}
                     </select>

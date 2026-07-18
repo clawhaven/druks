@@ -70,6 +70,11 @@ class HarnessConnection(Base, Uuid7Pk):
         return list(db_session().scalars(select(cls).order_by(cls.harness, cls.id)))
 
     @classmethod
+    def list_for_harness(cls, harness: str) -> list["HarnessConnection"]:
+        stmt = select(cls).where(cls.harness == harness).order_by(cls.id)
+        return list(db_session().scalars(stmt))
+
+    @classmethod
     def reload(cls, login_id: str) -> "HarnessConnection | None":
         """Fresh-from-DB read of one row, past the identity map's cached state
         — the post-lock re-read that keeps a refresher from re-presenting a

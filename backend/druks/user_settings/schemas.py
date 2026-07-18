@@ -13,6 +13,11 @@ if TYPE_CHECKING:
     from druks.user_settings.models import HarnessSettings
 
 
+class AllowedModel(BaseResponse):
+    id: str
+    label: str
+
+
 class HarnessResponse(BaseResponse):
     name: str
     provider: str
@@ -20,7 +25,7 @@ class HarnessResponse(BaseResponse):
     effort: str
     timeout: int
     fast_mode: bool
-    allowed_models: list[str]
+    allowed_models: list[AllowedModel]
     # The signed-in account's own connection; false until this account connects.
     connected: bool
     kind: str | None

@@ -22,7 +22,7 @@ from druks.skills.models import Skill
 
 from .artifacts import write_cost
 from .base import Harness, check_returncode, jwt_claims, jwt_expiry, post_token
-from .datastructures import CodexToken, ParsedMetric, ParsedUsage
+from .datastructures import CodexToken, ParsedMetric, ParsedModels, ParsedUsage
 from .exceptions import HarnessError, OAuthTokenError
 from .subprocess import read_result_json
 
@@ -274,6 +274,11 @@ class CodexHarness(Harness):
     model_prefixes = ("gpt-", "o1", "o3", "o4")
     models = ("gpt-5.5",)
     default_model = "gpt-5.5"
+    # ``client_version`` is required and lower-bounds the list (the server
+    # returns models with ``minimal_client_version <= client_version``); the
+    # high constant asks for the full catalog, and the empty-list guard
+    # catches it if the server ever starts rejecting unknown versions.
+    model_discovery_url = "https://chatgpt.com/backend-api/codex/models?client_version=99.99.99"
     command = "codex"
 
     # OAuth refresh config (consumed by the Harness templates).
@@ -382,6 +387,16 @@ class CodexHarness(Harness):
         return _CODEX_USAGE_URL, headers
 
     @classmethod
+    def get_model_discovery_headers(cls, token: CodexToken) -> dict:
+        headers = {
+            "Authorization": f"Bearer {token.access_token}",
+            "User-Agent": _CODEX_USER_AGENT,
+        }
+        if token.account_id:
+            headers["ChatGPT-Account-Id"] = token.account_id
+        return headers
+
+    @classmethod
     def _parse_usage(cls, raw: str) -> ParsedUsage:
         try:
             data = json.loads(raw)
@@ -416,6 +431,35 @@ class CodexHarness(Harness):
             week=week,
             raw=raw,
         )
+
+    @classmethod
+    def _parse_models(cls, raw: str) -> ParsedModels:
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return ParsedModels(ok=False, error="unparseable", raw=raw)
+        listed = data.get("models") if isinstance(data, dict) else None
+        if not isinstance(listed, list):
+            return ParsedModels(ok=False, error="unexpected_payload", raw=raw)
+        models = tuple(
+            {
+                "id": model["slug"],
+                "label": model.get("display_name") or model["slug"],
+                "efforts": [
+                    level["effort"]
+                    for level in model.get("supported_reasoning_levels") or []
+                    if isinstance(level, dict) and level.get("effort")
+                ],
+                "minimal_client_version": model.get("minimal_client_version"),
+            }
+            for model in listed
+            if isinstance(model, dict) and model.get("slug") and model.get("visibility") == "list"
+        )
+        if not models:
+            # A 200 with nothing selectable is what a stale-low client_version
+            # produces — never let it read as "no models".
+            return ParsedModels(ok=False, error="empty_list", raw=raw)
+        return ParsedModels(ok=True, models=models, raw=raw)
 
     def _build_codex_wrapper(
         self,

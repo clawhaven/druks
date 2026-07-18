@@ -23,7 +23,8 @@ def test_get_harnesses_lists_seeded_defaults(tmp_path: Path):
         harnesses = {h["name"]: h for h in client.get("/api/settings/harnesses").json()}
     assert harnesses["claude"]["provider"] == "anthropic"
     assert harnesses["claude"]["model"] == "claude-opus-4-7"
-    assert "claude-sonnet-4-6" in harnesses["claude"]["allowedModels"]
+    claude_model_ids = [m["id"] for m in harnesses["claude"]["allowedModels"]]
+    assert "claude-sonnet-4-6" in claude_model_ids
     assert harnesses["codex"]["provider"] == "openai"
     assert (harnesses["codex"]["effort"], harnesses["codex"]["timeout"]) == ("high", 1800)
 

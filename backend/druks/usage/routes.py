@@ -21,7 +21,7 @@ from druks.usage.schemas import (
     UsageResponse,
     UsageTodayResponse,
 )
-from druks.user_settings.models import UserSettings
+from druks.user_settings.models import HarnessSettings, UserSettings
 from druks.workflows import AgentCall
 
 router = APIRouter(tags=["usage"])
@@ -119,13 +119,17 @@ async def get_usage_today(account: Account = Depends(current_account)) -> UsageT
         .all()
     )
 
-    # Every call counts, even one whose model no current harness claims (ids
-    # churn on deploy, opus-4-7 → 4-8) or was never resolved: money spent must
-    # not vanish from the display, and the strip's total_run_spend_between
-    # counts them too. Unclaimed calls land in an extra "unattributed" entry —
-    # the panel's per-harness cards look up by name and skip it, its grand
-    # total sums the whole list.
-    harness_by_model = {model: h.name for h in get_harnesses() for model in h.models}
+    # Every call counts, even one whose model no picker list claims (pinned
+    # outside the list, or never resolved): money spent must not vanish from
+    # the display, and the strip's total_run_spend_between counts them too.
+    # Unclaimed calls land in an extra "unattributed" entry — the panel's
+    # per-harness cards look up by name and skip it, its grand total sums the
+    # whole list.
+    harness_by_model = {
+        entry["id"]: settings.name
+        for settings in HarnessSettings.all()
+        for entry in settings.allowed_models
+    }
     names = [h.name for h in get_harnesses()]
     totals = {name: {"spend": 0.0, "tokens": 0, "runs": 0} for name in [*names, UNATTRIBUTED]}
     hours: dict[str, list[float]] = {name: [0.0] * 24 for name in [*names, UNATTRIBUTED]}

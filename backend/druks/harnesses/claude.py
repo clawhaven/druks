@@ -19,7 +19,7 @@ from druks.skills.models import Skill
 
 from .artifacts import call_dir, write_cost
 from .base import Harness, check_returncode, parse_epoch_expiry, post_token
-from .datastructures import OAuthToken, ParsedMetric, ParsedUsage, SandboxSettings
+from .datastructures import OAuthToken, ParsedMetric, ParsedModels, ParsedUsage, SandboxSettings
 from .exceptions import HarnessError, OAuthTokenError, StreamJsonError
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ class ClaudeHarness(Harness):
     model_prefixes = ("claude-",)
     models = ("claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5")
     default_model = "claude-opus-4-7"
+    model_discovery_url = "https://api.anthropic.com/v1/models?limit=100"
     command = "claude"
 
     # OAuth refresh config (consumed by the Harness templates).
@@ -284,6 +285,14 @@ class ClaudeHarness(Harness):
         return _USAGE_URL, headers
 
     @classmethod
+    def get_model_discovery_headers(cls, token: OAuthToken) -> dict:
+        return {
+            "Authorization": f"Bearer {token.access_token}",
+            "anthropic-beta": _OAUTH_BETA,
+            "anthropic-version": _ANTHROPIC_VERSION,
+        }
+
+    @classmethod
     def _parse_usage(cls, raw: str) -> ParsedUsage:
         try:
             data = json.loads(raw)
@@ -297,6 +306,24 @@ class ClaudeHarness(Harness):
             week=_claude_metric(data.get("seven_day")),
             raw=raw,
         )
+
+    @classmethod
+    def _parse_models(cls, raw: str) -> ParsedModels:
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return ParsedModels(ok=False, error="unparseable", raw=raw)
+        listed = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(listed, list):
+            return ParsedModels(ok=False, error="unexpected_payload", raw=raw)
+        models = tuple(
+            {"id": model["id"], "label": model.get("display_name") or model["id"]}
+            for model in listed
+            if isinstance(model, dict) and model.get("id")
+        )
+        if not models:
+            return ParsedModels(ok=False, error="empty_list", raw=raw)
+        return ParsedModels(ok=True, models=models, raw=raw)
 
 
 def _oauth_block(data: dict) -> dict:
