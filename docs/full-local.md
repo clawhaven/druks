@@ -27,7 +27,7 @@ and `linux/arm64`.
 ## 1. Install the local Druks profile
 
 ```bash
-DRUKS_PROVIDER=docker bash <(curl -fsSL https://raw.githubusercontent.com/clawhaven/druks/main/scripts/install.sh)
+DRUKS_PROVIDER=docker bash <(curl -fsSL https://raw.githubusercontent.com/czpython/druks/main/scripts/install.sh)
 ```
 
 The first run:
@@ -40,7 +40,7 @@ The first run:
 For the bundled `build` extension, provision its GitHub Apps:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/clawhaven/druks/main/scripts/install.sh) --apps
+bash <(curl -fsSL https://raw.githubusercontent.com/czpython/druks/main/scripts/install.sh) --apps
 ```
 
 Then re-run the installer. A boot-ready run pulls images, applies Druks
@@ -52,7 +52,7 @@ the local profile.
 In a separate checkout:
 
 ```bash
-git clone https://github.com/clawhaven/drukbox
+git clone https://github.com/czpython/drukbox
 cd drukbox
 DOCKER_SSH_USERNAME=druks make dev
 ```

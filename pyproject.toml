@@ -40,9 +40,9 @@ dependencies = [
 ]
 
 [project.urls]
-Documentation = "https://github.com/clawhaven/druks/tree/main/docs"
-Issues = "https://github.com/clawhaven/druks/issues"
-Repository = "https://github.com/clawhaven/druks"
+Documentation = "https://github.com/czpython/druks/tree/main/docs"
+Issues = "https://github.com/czpython/druks/issues"
+Repository = "https://github.com/czpython/druks"
 
 [dependency-groups]
 dev = [

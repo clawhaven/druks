@@ -71,7 +71,7 @@ The fast path is:
 
 ```bash
 cd ~/druks
-bash <(curl -fsSL https://raw.githubusercontent.com/clawhaven/druks/main/scripts/install.sh) --apps
+bash <(curl -fsSL https://raw.githubusercontent.com/czpython/druks/main/scripts/install.sh) --apps
 ```
 
 This uses the GitHub manifest files under

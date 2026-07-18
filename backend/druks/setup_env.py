@@ -204,7 +204,7 @@ _LOCAL_SECTION = Section(
     trailer=(
         "# Sandboxes are local Docker containers. Run drukbox on the host so\n"
         "# its docker provider reaches your Docker daemon:\n"
-        "#   git clone https://github.com/clawhaven/drukbox\n"
+        "#   git clone https://github.com/czpython/drukbox\n"
         "#   cd drukbox && DOCKER_SSH_USERNAME=druks make dev"
     ),
 )

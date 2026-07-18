@@ -36,7 +36,7 @@ the installer logs in with it.)
 ### 1. Run the installer
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/clawhaven/druks/main/scripts/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/czpython/druks/main/scripts/install.sh)
 ```
 
 First pass writes `~/druks/.env` with random secrets pre-filled,
@@ -64,7 +64,7 @@ want it elsewhere.
 ### 2. Re-run the installer
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/clawhaven/druks/main/scripts/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/czpython/druks/main/scripts/install.sh)
 ```
 
 Second pass validates that the required `.env` keys and PEMs are present,
