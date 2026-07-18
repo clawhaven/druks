@@ -388,11 +388,24 @@ class CodexHarness(Harness):
 
     @classmethod
     async def get_model_discovery_url(cls) -> str:
-        # ``client_version`` is required and the server returns only models
-        # with ``minimal_client_version <= client_version``, so the value is
-        # resolved live from the same npm discovery the CLI's own update
-        # checker uses — a pinned constant would silently shrink the list.
-        version = await _latest_cli_version()
+        # ``client_version`` is required; the server returns only models with
+        # ``minimal_client_version <= client_version``, so resolve it live from
+        # the npm discovery the CLI's own update checker uses. Unresolvable
+        # raises rather than fetching with a guessed-low version that would
+        # silently shrink the list.
+        try:
+            async with httpx.AsyncClient(timeout=_NPM_TIMEOUT_SECONDS) as client:
+                response = await client.get(_NPM_LATEST_URL)
+        except httpx.HTTPError as exc:
+            raise ModelsRequestError("version_unresolved") from exc
+        if response.status_code != 200:
+            raise ModelsRequestError("version_unresolved")
+        try:
+            version = response.json().get("version")
+        except ValueError as exc:
+            raise ModelsRequestError("version_unresolved") from exc
+        if not version:
+            raise ModelsRequestError("version_unresolved")
         return f"{cls.model_discovery_url}?client_version={version}"
 
     @classmethod
@@ -683,27 +696,6 @@ class CodexHarness(Harness):
             extra_config_dirs=dirs,
             extra_dir_excludes={".codex/skills": Skill.disabled_excludes()},
         )
-
-
-async def _latest_cli_version() -> str:
-    """The npm ``dist-tags.latest`` of ``@openai/codex`` — the same discovery
-    the CLI's own update checker does. Unresolvable raises
-    :class:`ModelsRequestError`: fetching with a guessed-low ``client_version``
-    would silently shrink the model list, so not fetching is the safe move."""
-    try:
-        async with httpx.AsyncClient(timeout=_NPM_TIMEOUT_SECONDS) as client:
-            response = await client.get(_NPM_LATEST_URL)
-    except httpx.HTTPError as exc:
-        raise ModelsRequestError("version_unresolved") from exc
-    if response.status_code != 200:
-        raise ModelsRequestError("version_unresolved")
-    try:
-        version = response.json().get("version")
-    except ValueError as exc:
-        raise ModelsRequestError("version_unresolved") from exc
-    if not version:
-        raise ModelsRequestError("version_unresolved")
-    return version
 
 
 def _codex_window(block: object) -> ParsedMetric | None:

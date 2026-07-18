@@ -24,11 +24,6 @@ class RefreshModels(Workflow):
     every = "0 6 * * *"
 
     async def run(self) -> dict[str, object]:
-        # Daily: model launches aren't 5-minute events, and every failure path
-        # keeps the last stored list, so a missed tick costs nothing. The fetch
-        # is actor-less, so the fallback account's login is preferred — but
-        # accounts are per provider email, so the fallback account rarely holds
-        # every harness; any of the harness's logins serves the same purpose.
         fallback_id = UserSettings.get().fallback_account_id
         results = []
         for harness in get_harnesses():
