@@ -11,8 +11,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
-import httpx
-
 from druks.sandbox.datastructures import (
     AgentInvocation,
     Credentials,
@@ -25,7 +23,7 @@ from druks.skills.models import Skill
 from .artifacts import write_cost
 from .base import Harness, check_returncode, jwt_claims, jwt_expiry, post_token
 from .datastructures import CodexToken, ParsedMetric, ParsedModels, ParsedUsage
-from .exceptions import HarnessError, ModelsRequestError, OAuthTokenError
+from .exceptions import HarnessError, OAuthTokenError
 from .subprocess import read_result_json
 
 logger = logging.getLogger(__name__)
@@ -43,8 +41,6 @@ _TOKEN_COUNT_MARKERS = ('"type":"token_count"', '"type": "token_count"')
 # extension. Returns the same numbers /status shows without a completion.
 _CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 _CODEX_USER_AGENT = "codex-cli"
-_NPM_LATEST_URL = "https://registry.npmjs.org/@openai%2fcodex/latest"
-_NPM_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -278,7 +274,11 @@ class CodexHarness(Harness):
     model_prefixes = ("gpt-", "o1", "o3", "o4")
     models = ("gpt-5.5",)
     default_model = "gpt-5.5"
-    model_discovery_url = "https://chatgpt.com/backend-api/codex/models"
+    # ``client_version`` is required and lower-bounds the list (the server
+    # returns models with ``minimal_client_version <= client_version``); the
+    # high constant asks for the full catalog, and the empty-list guard
+    # catches it if the server ever starts rejecting unknown versions.
+    model_discovery_url = "https://chatgpt.com/backend-api/codex/models?client_version=99.99.99"
     command = "codex"
 
     # OAuth refresh config (consumed by the Harness templates).
@@ -385,28 +385,6 @@ class CodexHarness(Harness):
         if token.account_id:
             headers["ChatGPT-Account-Id"] = token.account_id
         return _CODEX_USAGE_URL, headers
-
-    @classmethod
-    async def get_model_discovery_url(cls) -> str:
-        # ``client_version`` is required; the server returns only models with
-        # ``minimal_client_version <= client_version``, so resolve it live from
-        # the npm discovery the CLI's own update checker uses. Unresolvable
-        # raises rather than fetching with a guessed-low version that would
-        # silently shrink the list.
-        try:
-            async with httpx.AsyncClient(timeout=_NPM_TIMEOUT_SECONDS) as client:
-                response = await client.get(_NPM_LATEST_URL)
-        except httpx.HTTPError as exc:
-            raise ModelsRequestError("version_unresolved") from exc
-        if response.status_code != 200:
-            raise ModelsRequestError("version_unresolved")
-        try:
-            version = response.json().get("version")
-        except ValueError as exc:
-            raise ModelsRequestError("version_unresolved") from exc
-        if not version:
-            raise ModelsRequestError("version_unresolved")
-        return f"{cls.model_discovery_url}?client_version={version}"
 
     @classmethod
     def get_model_discovery_headers(cls, token: CodexToken) -> dict:

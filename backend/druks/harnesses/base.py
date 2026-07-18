@@ -37,7 +37,6 @@ from .exceptions import (
     HarnessError,
     HarnessNotConnectedError,
     LoginError,
-    ModelsRequestError,
     OAuthTokenError,
 )
 from .models import HarnessConnection
@@ -527,14 +526,10 @@ class Harness(ABC):
         except OAuthTokenError as exc:
             return ParsedModels(ok=False, error=exc.tag)
 
-        try:
-            url = await cls.get_model_discovery_url()
-        except ModelsRequestError as exc:
-            return ParsedModels(ok=False, error=exc.tag)
         headers = cls.get_model_discovery_headers(token)
         try:
             async with httpx.AsyncClient(timeout=_USAGE_TIMEOUT_SECONDS) as client:
-                response = await client.get(url, headers=headers)
+                response = await client.get(cls.model_discovery_url, headers=headers)
         except httpx.TimeoutException:
             return ParsedModels(ok=False, error="timeout")
         except httpx.HTTPError as exc:
@@ -551,13 +546,6 @@ class Harness(ABC):
             response.text[:300],
         )
         return ParsedModels(ok=False, error=tag)
-
-    @classmethod
-    async def get_model_discovery_url(cls) -> str:
-        """The URL fetch_models GETs — ``model_discovery_url``, unless part of
-        it must be resolved at fetch time (override; raise
-        :class:`ModelsRequestError` when it can't be)."""
-        return cls.model_discovery_url
 
     @classmethod
     @abstractmethod

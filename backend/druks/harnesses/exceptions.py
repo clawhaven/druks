@@ -24,18 +24,6 @@ class OAuthTokenError(Exception):
         self.tag = tag
 
 
-class ModelsRequestError(Exception):
-    """A model-list request could not even be built. ``tag`` is the short,
-    stable code surfaced on the fetch report: ``version_unresolved`` (codex
-    needs the CLI's npm dist-tags.latest as ``client_version`` and the
-    registry didn't answer — fetching with a guessed-low version silently
-    shrinks the list, so not fetching is the safe move)."""
-
-    def __init__(self, tag: str) -> None:
-        super().__init__(tag)
-        self.tag = tag
-
-
 class GrantError(Exception):
     """A token-refresh grant produced no usable grant. ``tag`` is the short,
     stable code recorded on the rotation report: ``network`` (request never
