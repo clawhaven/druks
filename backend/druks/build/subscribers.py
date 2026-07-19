@@ -133,9 +133,13 @@ async def _observe_external_close(*, repo: str, pr_number: int, work_item: WorkI
         return
     work_item.set_status(HandoffStatus.CANCELLED, event_payload={"external": True})
     await work_item.cancel_active_build(failure="pr closed without merge")
-    snapshot_policy = work_item.extension_config_snapshot.get("policy") or {}
-    if RepoPolicy.model_validate(snapshot_policy).delete_branch:
-        await _delete_branch(repo, work_item.branch)
+    # Branch cleanup is best-effort: resolving policy is live IO now, and a fetch
+    # failure must not strand the ticket — its reset below still runs.
+    try:
+        if (await RepoPolicy.resolve(repo)).delete_branch:
+            await _delete_branch(repo, work_item.branch)
+    except Exception:  # noqa: BLE001 — cleanup only, like _delete_branch itself
+        logger.warning("Skipped branch cleanup for %s#%s.", repo, pr_number, exc_info=True)
     # The attempt was abandoned, not the ticket: send it back to the
     # provider's resting pool rather than stranding it in In Progress.
     await work_item.set_remote_status(SemanticStatus.READY_FOR_AGENT)

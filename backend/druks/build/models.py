@@ -199,11 +199,6 @@ class WorkItem(Base):
         ForeignKey("durable_runs.id", ondelete="SET NULL"), default=None
     )
     status: Mapped[str | None] = mapped_column(default=None)
-    # Intake-time snapshot of the resolved ``.druks/build`` config; the
-    # workflow reads it for the item's lifespan so a mid-flight config
-    # push can't flip policy under a running build. Empty only until
-    # intake fills it in (the workflow then resolves live).
-    extension_config_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
 
@@ -376,12 +371,9 @@ class WorkItem(Base):
         branch: str | None = None,
         build_run_id: str | None = None,
         project_id: int | None = None,
-        extension_config_snapshot: dict[str, Any] | None = None,
     ) -> None:
         if title is not None:
             self.title = title
-        if extension_config_snapshot is not None:
-            self.extension_config_snapshot = extension_config_snapshot
         if remote_url is not None:
             self.remote_url = remote_url
         if pr_number is not None:
