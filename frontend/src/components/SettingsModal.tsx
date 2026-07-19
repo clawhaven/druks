@@ -1415,7 +1415,8 @@ export function AgentAccessPane() {
 
   async function mint() {
     const value = name.trim()
-    if (!value) return
+    // No second mint while a secret is on screen — "done" acknowledges it first.
+    if (!value || minted) return
     setBusy(true)
     setError(null)
     try {
@@ -1480,7 +1481,11 @@ export function AgentAccessPane() {
             data-lpignore="true"
             disabled={busy}
           />
-          <button className="set-btn primary" disabled={busy || !name.trim()} onClick={() => void mint()}>
+          <button
+            className="set-btn primary"
+            disabled={busy || !!minted || !name.trim()}
+            onClick={() => void mint()}
+          >
             {busy ? 'minting…' : 'mint'}
           </button>
         </div>
@@ -1547,7 +1552,7 @@ function PatRow({
       <div className="mcp-id">
         <span className="mcp-name">{pat.name}</span>
         <span className="mcp-url">
-          {pat.tokenPrefix}… · expires {new Date(pat.expiresAt).toLocaleDateString()}
+          {pat.prefix}… · expires {new Date(pat.expiresAt).toLocaleDateString()}
         </span>
       </div>
       <span className="mcp-tok">

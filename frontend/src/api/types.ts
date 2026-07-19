@@ -439,7 +439,7 @@ export interface McpRegistryCandidate {
 export interface Pat {
   id: string
   name: string
-  tokenPrefix: string
+  prefix: string
   createdAt: string
   expiresAt: string
   lastUsedAt: string | null

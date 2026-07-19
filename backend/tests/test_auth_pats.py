@@ -128,13 +128,20 @@ def test_an_authorization_header_never_falls_back_to_the_cookie(tmp_path, db_ses
 
 
 @pytest.mark.parametrize(
-    "header", ["Token abc", "Bearer", "Bearer ", "Bearer a b", "bearer lowercased"]
+    "header", ["", "Token abc", "Bearer", "Bearer ", "Bearer a b", "bearer lowercased"]
 )
 def test_a_malformed_authorization_header_is_challenged(tmp_path, db_session, header):
     with _client(tmp_path) as client:
         response = client.get("/api/auth/session", headers={"Authorization": header})
         assert response.status_code == 401
         assert response.headers["WWW-Authenticate"] == 'Bearer realm="druks"'
+
+
+def test_an_empty_authorization_header_never_slides_to_the_cookie(tmp_path, db_session):
+    with _client(tmp_path) as client:
+        _sign_in(client)
+        response = client.get("/api/auth/session", headers={"Authorization": ""})
+        assert response.status_code == 401
 
 
 def test_a_dead_token_401s_with_its_prefix_only(tmp_path, db_session):
@@ -171,7 +178,8 @@ def test_the_session_manages_the_token_lifecycle(tmp_path, db_session):
 
         listed = client.get("/api/auth/pats").json()
         assert [item["name"] for item in listed] == ["ci bot"]
-        assert listed[0]["tokenPrefix"] == body["tokenPrefix"]
+        assert listed[0]["prefix"] == body["prefix"]
+        assert body["token"].split("_")[2] == body["prefix"]
         # The plaintext appears exactly once, at create.
         assert "token" not in listed[0]
 

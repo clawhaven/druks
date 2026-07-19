@@ -115,12 +115,15 @@ class PersonalAccessToken(Base, Uuid7Pk):
             prefix = _new_prefix()
         secret = base64.urlsafe_b64encode(secrets.token_bytes(PAT_SECRET_BYTES))
         token = f"{PAT_TOKEN_TAG}_{prefix}_{secret.rstrip(b'=').decode()}"
+        # One clock read: expires_at is exactly created_at + the lifetime.
+        now = Base.utc_now()
         row = cls(
             account_id=account_id,
             name=name,
             token_prefix=prefix,
             token_hash=_hash_token(token),
-            expires_at=Base.utc_now() + PAT_LIFETIME,
+            created_at=now,
+            expires_at=now + PAT_LIFETIME,
         )
         session = db_session()
         session.add(row)

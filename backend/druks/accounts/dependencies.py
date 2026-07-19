@@ -38,7 +38,9 @@ async def current_account(request: Request) -> Account:
     Authorization header is present — never falling back to the cookie —
     else the signed-in session."""
     header = request.headers.get("Authorization")
-    if header:
+    # Present-but-empty is still present: it must be challenged, never slide
+    # to the cookie.
+    if header is not None:
         scheme, _, credential = header.partition(" ")
         if scheme == "Bearer" and credential and " " not in credential:
             try:

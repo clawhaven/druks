@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
 from druks.schemas import BaseResponse
 
@@ -17,7 +17,8 @@ class PatResponse(BaseResponse):
 
     id: str
     name: str
-    token_prefix: str
+    # Wire name is the spec's `prefix`; the column keeps its qualified name.
+    prefix: str = Field(validation_alias="token_prefix")
     created_at: datetime
     expires_at: datetime
     last_used_at: datetime | None

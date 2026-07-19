@@ -9,7 +9,7 @@ function pat(overrides: Partial<Pat> = {}): Pat {
   return {
     id: 'p1',
     name: 'ci bot',
-    tokenPrefix: 'AbCdEf123456',
+    prefix: 'AbCdEf123456',
     createdAt: '2026-07-19T10:00:00Z',
     expiresAt: '2027-07-19T10:00:00Z',
     lastUsedAt: null,
@@ -71,7 +71,7 @@ describe('AgentAccessPane', () => {
         pat({
           id: 'p3',
           name: 'old',
-          tokenPrefix: 'Zz9876543210',
+          prefix: 'Zz9876543210',
           isActive: false,
           isRevoked: true,
           revokedAt: '2026-07-01T00:00:00Z',
