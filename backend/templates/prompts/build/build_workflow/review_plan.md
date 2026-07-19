@@ -58,8 +58,8 @@ Scale rigor to the change. A lint-only or single-file ticket does not warrant pr
 
 ASSIGNEE RESOLUTION — the `assignee_github_login` schema field. Resolve the ticket
 assignee's GitHub login via the github MCP from their name
-`{{ workflow.input.task_owner_name or "(unknown)" }}` or email
-`{{ workflow.input.task_owner_email or "(unknown)" }}` (user search; pick the
+`{{ view.task_owner_name or "(unknown)" }}` or email
+`{{ view.task_owner_email or "(unknown)" }}` (user search; pick the
 candidate whose profile clearly matches). Report the login string, or `null` when
 nothing resolves convincingly — never guess. Druks uses it to request their
 review at the parks that await a human; do not request reviewers yourself.
