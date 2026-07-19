@@ -100,6 +100,13 @@ class ProjectRepo(Base):
     def get(cls, repo_id: int) -> "ProjectRepo | None":
         return db_session().get(cls, repo_id)
 
+    @classmethod
+    def get_in_project(cls, *, project_id: int, repo_id: int) -> "ProjectRepo | None":
+        # Scoped lookup for the nested /projects/{project_id}/repos/{repo_id} routes:
+        # a repo reached through the wrong project's URL is a miss, not a hit to reject.
+        stmt = select(cls).where(cls.id == repo_id, cls.project_id == project_id).limit(1)
+        return db_session().scalars(stmt).first()
+
     def effective_profile(self) -> dict[str, Any]:
         # {} until the repo profiler has run — an unprofiled repo is a normal state.
         return self.profile.get("effective") or {}
