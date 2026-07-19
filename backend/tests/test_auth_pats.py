@@ -55,7 +55,7 @@ def test_the_minted_token_shape_and_hash_are_pinned(db_session):
     assert pat.token_hash == hashlib.sha256(token.encode()).digest()
     assert pat.expires_at == pat.created_at + timedelta(days=365)
     assert not pat.last_used_at
-    assert pat.is_active
+    assert pat.status == "active"
 
 
 def test_a_prefix_collision_regenerates(db_session, monkeypatch):
@@ -186,8 +186,7 @@ def test_the_session_manages_the_token_lifecycle(tmp_path, db_session):
 
         row_id = listed[0]["id"]
         revoked = client.delete(f"/api/auth/personal-tokens/{row_id}").json()
-        assert revoked["isRevoked"] is True
-        assert revoked["isActive"] is False
+        assert revoked["status"] == "revoked"
         # A repeat revoke answers the same state, same instant.
         again = client.delete(f"/api/auth/personal-tokens/{row_id}").json()
         assert again["revokedAt"] == revoked["revokedAt"]

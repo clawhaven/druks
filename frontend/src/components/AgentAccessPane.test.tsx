@@ -14,9 +14,7 @@ function pat(overrides: Partial<Pat> = {}): Pat {
     expiresAt: '2027-07-19T10:00:00Z',
     lastUsedAt: null,
     revokedAt: null,
-    isActive: true,
-    isExpired: false,
-    isRevoked: false,
+    status: 'active',
     ...overrides,
   }
 }
@@ -72,8 +70,7 @@ describe('AgentAccessPane', () => {
           id: 'p3',
           name: 'old',
           prefix: 'Zz9876543210',
-          isActive: false,
-          isRevoked: true,
+          status: 'revoked',
           revokedAt: '2026-07-01T00:00:00Z',
         }),
       ],
@@ -114,7 +111,7 @@ describe('AgentAccessPane', () => {
   it('revokes only after the operator confirms', async () => {
     const fetchMock = stubFetch({
       list: () => [pat()],
-      revoked: pat({ isActive: false, isRevoked: true, revokedAt: '2026-07-19T11:00:00Z' }),
+      revoked: pat({ status: 'revoked', revokedAt: '2026-07-19T11:00:00Z' }),
     })
     const confirm = vi.fn(() => false)
     vi.stubGlobal('confirm', confirm)

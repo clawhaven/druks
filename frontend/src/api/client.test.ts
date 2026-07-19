@@ -26,7 +26,7 @@ describe('API error messages', () => {
 describe('personal access tokens', () => {
   it('mints with the embedded name and parses the revoke response', async () => {
     const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(
-      async () => new Response(JSON.stringify({ id: 'p1', isRevoked: true }), { status: 200 }),
+      async () => new Response(JSON.stringify({ id: 'p1', status: 'revoked' }), { status: 200 }),
     )
     vi.stubGlobal('fetch', fetchMock)
 
@@ -41,7 +41,7 @@ describe('personal access tokens', () => {
     const revokeCall = fetchMock.mock.calls[1]
     expect(revokeCall?.[0]).toBe('/api/auth/personal-tokens/p1')
     expect(revokeCall?.[1]?.method).toBe('DELETE')
-    expect(revoked.isRevoked).toBe(true)
+    expect(revoked.status).toBe('revoked')
   })
 })
 

@@ -444,9 +444,7 @@ export interface Pat {
   expiresAt: string
   lastUsedAt: string | null
   revokedAt: string | null
-  isActive: boolean
-  isExpired: boolean
-  isRevoked: boolean
+  status: 'active' | 'expired' | 'revoked'
 }
 
 export interface McpServer {

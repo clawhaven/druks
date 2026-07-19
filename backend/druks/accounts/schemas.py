@@ -25,6 +25,4 @@ class PatResponse(BaseResponse):
     expires_at: datetime
     last_used_at: datetime | None
     revoked_at: datetime | None
-    is_active: bool
-    is_expired: bool
-    is_revoked: bool
+    status: str

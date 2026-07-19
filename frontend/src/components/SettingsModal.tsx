@@ -1533,12 +1533,6 @@ export function AgentAccessPane() {
   )
 }
 
-function patStatusLabel(pat: Pat): string {
-  if (pat.isRevoked) return 'revoked'
-  if (pat.isExpired) return 'expired'
-  return 'active'
-}
-
 function PatRow({
   pat,
   busy,
@@ -1548,8 +1542,9 @@ function PatRow({
   busy: boolean
   onRevoke: (pat: Pat) => Promise<void>
 }) {
+  const active = pat.status === 'active'
   return (
-    <div className={'mcp-row' + (pat.isActive ? '' : ' is-off')}>
+    <div className={'mcp-row' + (active ? '' : ' is-off')}>
       <div className="mcp-id">
         <span className="mcp-name">{pat.name}</span>
         <span className="mcp-url">
@@ -1559,10 +1554,8 @@ function PatRow({
       <span className="mcp-tok">
         last used {pat.lastUsedAt ? new Date(pat.lastUsedAt).toLocaleString() : 'never'}
       </span>
-      <span className={'hr-chip ' + (pat.isActive ? 'hr-chip-on' : 'hr-chip-off')}>
-        {patStatusLabel(pat)}
-      </span>
-      {!pat.isRevoked && (
+      <span className={'hr-chip ' + (active ? 'hr-chip-on' : 'hr-chip-off')}>{pat.status}</span>
+      {pat.status !== 'revoked' && (
         <button
           className="sc-remove"
           onClick={() => void onRevoke(pat)}

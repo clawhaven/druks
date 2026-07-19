@@ -82,16 +82,17 @@ class PersonalAccessToken(Base, Uuid7Pk):
     revoked_at: Mapped[datetime | None]
 
     @property
-    def is_revoked(self) -> bool:
-        return bool(self.revoked_at)
-
-    @property
     def is_expired(self) -> bool:
         return Base.utc_now() >= self.expires_at
 
     @property
-    def is_active(self) -> bool:
-        return not self.is_revoked and not self.is_expired
+    def status(self) -> str:
+        # One tri-state on the wire; revoked outranks expired outranks active.
+        if self.revoked_at:
+            return "revoked"
+        if self.is_expired:
+            return "expired"
+        return "active"
 
     @classmethod
     def get(cls, pat_id: str) -> "PersonalAccessToken | None":
