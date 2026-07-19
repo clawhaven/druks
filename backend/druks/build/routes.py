@@ -191,9 +191,7 @@ async def update_project_repo(
     repo_id: int,
     purpose: str | None = Body(default=None, embed=True),
 ) -> ProjectRepoSummary:
-    # repo_id is the unique key; the project_id path segment is just where the
-    # repo lives, not a second thing to re-check.
-    row = ProjectRepo.get(repo_id)
+    row = ProjectRepo.get_in_project(project_id=project_id, repo_id=repo_id)
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "repo not found")
     if purpose is not None:
@@ -208,7 +206,7 @@ async def update_project_repo(
     response_model_by_alias=True,
 )
 async def profile_project_repo(project_id: int, repo_id: int) -> ProjectRepoSummary:
-    row = ProjectRepo.get(repo_id)
+    row = ProjectRepo.get_in_project(project_id=project_id, repo_id=repo_id)
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "repo not found")
     # Profile is subject-unique: start() returns the live run when one is already
@@ -222,7 +220,7 @@ async def profile_project_repo(project_id: int, repo_id: int) -> ProjectRepoSumm
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_project_repo(project_id: int, repo_id: int) -> None:
-    row = ProjectRepo.get(repo_id)
+    row = ProjectRepo.get_in_project(project_id=project_id, repo_id=repo_id)
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "repo not found")
     session = db_session()
