@@ -23,9 +23,6 @@ class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # Human label shown in the dashboard. Unique because we use it as
-    # the natural display key — duplicate names would make the project
-    # column ambiguous.
     name: Mapped[str] = mapped_column(unique=True)
     created_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
     updated_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
@@ -72,18 +69,10 @@ class ProjectRepo(Base):
     project_id: Mapped[int] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"),
     )
-    # ``owner/name``. UNIQUE because a repo lives in exactly one project
-    # If multi-project sharing ever becomes a
-    # real requirement, drop the UNIQUE and route the lookup through a
-    # primary-binding column instead.
     full_name: Mapped[str] = mapped_column(unique=True)
     # Optional free-form role for the dashboard: "design", "infra",
     # "extension". None when the operator hasn't labelled it.
     purpose: Mapped[str | None]
-    # {"baseline": ..., "effective": ...} — baseline is what the repo profiler
-    # detected; effective is baseline with the operator's pinned verification
-    # (RepoPolicy.verification) applied. Kept separate so removing the pin
-    # restores the detected baseline instead of losing it.
     profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(default=Base.utc_now)
 
@@ -183,8 +172,6 @@ class WorkItem(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # The Druks Project this WorkItem belongs to. Required - intake
-    # refuses tickets whose Linear project doesn't map to a ProjectRepo.
     project_id: Mapped[int] = mapped_column(
         ForeignKey("projects.id"),
     )
@@ -211,8 +198,6 @@ class WorkItem(Base):
     build_run_id: Mapped[str | None] = mapped_column(
         ForeignKey("durable_runs.id", ondelete="SET NULL"), default=None
     )
-    # The handoff lane: null while in flight, a HandoffStatus at rest. active =
-    # null, history = set; stamped at handoff, cleared on (re)dispatch.
     status: Mapped[str | None] = mapped_column(default=None)
     # Intake-time snapshot of the resolved ``.druks/build`` config; the
     # workflow reads it for the item's lifespan so a mid-flight config
