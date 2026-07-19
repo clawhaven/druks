@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { CreatedPat, Pat } from '../api/types'
+import type { Pat } from '../api/types'
 import { AgentAccessPane } from './SettingsModal'
 
 function pat(overrides: Partial<Pat> = {}): Pat {
@@ -21,16 +21,16 @@ function pat(overrides: Partial<Pat> = {}): Pat {
   }
 }
 
-const MINTED: CreatedPat = { ...pat({ id: 'p2', name: 'laptop' }), token: 'druks_pat_AbCdEf123456_secret' }
+const MINTED = { token: 'druks_pat_AbCdEf123456_secret' }
 
-function stubFetch(routes: { list: () => Pat[]; created?: CreatedPat; revoked?: Pat }) {
+function stubFetch(routes: { list: () => Pat[]; created?: { token: string }; revoked?: Pat }) {
   const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>(
     async (url, init) => {
       const method = init?.method ?? 'GET'
-      if (url === '/api/auth/pats' && method === 'GET') {
+      if (url === '/api/auth/personal-tokens' && method === 'GET') {
         return new Response(JSON.stringify(routes.list()), { status: 200 })
       }
-      if (url === '/api/auth/pats' && method === 'POST') {
+      if (url === '/api/auth/personal-tokens' && method === 'POST') {
         return new Response(JSON.stringify(routes.created), { status: 200 })
       }
       if (method === 'DELETE') {
@@ -129,6 +129,6 @@ describe('AgentAccessPane', () => {
     fireEvent.click(screen.getByText('✕ revoke'))
     await flush()
     const revokeCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'DELETE')
-    expect(revokeCall?.[0]).toBe('/api/auth/pats/p1')
+    expect(revokeCall?.[0]).toBe('/api/auth/personal-tokens/p1')
   })
 })

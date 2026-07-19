@@ -15,8 +15,8 @@ EXEMPT_API_PATHS = {
 # PAT management admits the session cookie only — never a PAT, so a token
 # cannot mint or revoke tokens.
 SESSION_ONLY_API_PATHS = {
-    "/api/auth/pats",
-    "/api/auth/pats/{pat_id}",
+    "/api/auth/personal-tokens",
+    "/api/auth/personal-tokens/{pat_id}",
 }
 
 

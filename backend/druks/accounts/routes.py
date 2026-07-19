@@ -8,7 +8,7 @@ from druks.accounts.dependencies import (
     resolve_session_account,
 )
 from druks.accounts.models import Account, PersonalAccessToken
-from druks.accounts.schemas import AccountResponse, CreatedPatResponse, PatResponse
+from druks.accounts.schemas import AccountResponse, PatResponse
 from druks.harnesses.base import Harness
 from druks.harnesses.exceptions import LoginError
 from druks.harnesses.models import HarnessConnection
@@ -111,34 +111,33 @@ async def logout(request: Request, response: Response) -> None:
     _set_session_cookie(request, response, "")
 
 
-# PAT management rides the session gate only (current_session_account, per
-# route — this router is ungated at include time), so a token can never mint
-# or revoke tokens.
-
-
-@router.get("/pats", response_model=list[PatResponse], response_model_by_alias=True)
+@router.get("/personal-tokens", response_model=list[PatResponse], response_model_by_alias=True)
 async def list_pats(
     account: Account = Depends(current_session_account),
 ) -> list[PersonalAccessToken]:
     return PersonalAccessToken.list_for_account(account.id)
 
 
-@router.post("/pats", response_model=CreatedPatResponse, response_model_by_alias=True)
+@router.post("/personal-tokens")
 async def create_pat(
     account: Account = Depends(current_session_account),
     name: str = Body(..., embed=True),
-) -> CreatedPatResponse:
+) -> dict[str, str]:
     name = name.strip()
     if name and len(name) <= PAT_NAME_LENGTH:
-        pat, token = PersonalAccessToken.create(account_id=account.id, name=name)
-        return CreatedPatResponse(**PatResponse.model_validate(pat).model_dump(), token=token)
+        # The plaintext, handed back exactly once — only its hash is stored,
+        # and the new row surfaces through the list.
+        _, token = PersonalAccessToken.create(account_id=account.id, name=name)
+        return {"token": token}
     raise HTTPException(
         status_code=422,
         detail=f"A token needs a name of at most {PAT_NAME_LENGTH} characters.",
     )
 
 
-@router.delete("/pats/{pat_id}", response_model=PatResponse, response_model_by_alias=True)
+@router.delete(
+    "/personal-tokens/{pat_id}", response_model=PatResponse, response_model_by_alias=True
+)
 async def revoke_pat(
     pat_id: str, account: Account = Depends(current_session_account)
 ) -> PersonalAccessToken:

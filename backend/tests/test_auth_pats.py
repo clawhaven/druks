@@ -159,35 +159,37 @@ def test_a_dead_token_401s_with_its_prefix_only(tmp_path, db_session):
 def test_a_pat_cannot_manage_pats(tmp_path, db_session):
     with _client(tmp_path) as client:
         pat, token = _mint()
-        assert client.get("/api/auth/pats", headers=_bearer(token)).status_code == 401
-        create = client.post("/api/auth/pats", json={"name": "x"}, headers=_bearer(token))
+        assert client.get("/api/auth/personal-tokens", headers=_bearer(token)).status_code == 401
+        create = client.post(
+            "/api/auth/personal-tokens", json={"name": "x"}, headers=_bearer(token)
+        )
         assert create.status_code == 401
-        revoke = client.delete(f"/api/auth/pats/{pat.id}", headers=_bearer(token))
+        revoke = client.delete(f"/api/auth/personal-tokens/{pat.id}", headers=_bearer(token))
         assert revoke.status_code == 401
 
 
 def test_the_session_manages_the_token_lifecycle(tmp_path, db_session):
     with _client(tmp_path) as client:
         _sign_in(client)
-        created = client.post("/api/auth/pats", json={"name": "ci bot"})
+        created = client.post("/api/auth/personal-tokens", json={"name": "ci bot"})
         assert created.status_code == 200
-        body = created.json()
-        assert body["token"].startswith(f"{PAT_TOKEN_TAG}_")
-        assert body["name"] == "ci bot"
-        assert body["isActive"] is True
+        # Create answers only the plaintext, exactly once; the row surfaces
+        # through the list.
+        assert list(created.json()) == ["token"]
+        token = created.json()["token"]
+        assert token.startswith(f"{PAT_TOKEN_TAG}_")
 
-        listed = client.get("/api/auth/pats").json()
+        listed = client.get("/api/auth/personal-tokens").json()
         assert [item["name"] for item in listed] == ["ci bot"]
-        assert listed[0]["prefix"] == body["prefix"]
-        assert body["token"].split("_")[2] == body["prefix"]
-        # The plaintext appears exactly once, at create.
+        assert token.split("_")[2] == listed[0]["prefix"]
         assert "token" not in listed[0]
 
-        revoked = client.delete(f"/api/auth/pats/{body['id']}").json()
+        row_id = listed[0]["id"]
+        revoked = client.delete(f"/api/auth/personal-tokens/{row_id}").json()
         assert revoked["isRevoked"] is True
         assert revoked["isActive"] is False
         # A repeat revoke answers the same state, same instant.
-        again = client.delete(f"/api/auth/pats/{body['id']}").json()
+        again = client.delete(f"/api/auth/personal-tokens/{row_id}").json()
         assert again["revokedAt"] == revoked["revokedAt"]
 
 
@@ -195,14 +197,14 @@ def test_the_list_is_scoped_to_the_signed_in_account(tmp_path, db_session):
     with _client(tmp_path) as client:
         _mint("other@example.com")
         _sign_in(client)
-        assert client.get("/api/auth/pats").json() == []
+        assert client.get("/api/auth/personal-tokens").json() == []
 
 
 def test_revoking_anothers_token_is_a_404(tmp_path, db_session):
     with _client(tmp_path) as client:
         pat, _ = _mint("other@example.com")
         _sign_in(client)
-        assert client.delete(f"/api/auth/pats/{pat.id}").status_code == 404
+        assert client.delete(f"/api/auth/personal-tokens/{pat.id}").status_code == 404
         session_registry().expire_all()
         assert not pat.revoked_at
 
@@ -210,5 +212,5 @@ def test_revoking_anothers_token_is_a_404(tmp_path, db_session):
 def test_a_token_needs_a_name_that_fits(tmp_path, db_session):
     with _client(tmp_path) as client:
         _sign_in(client)
-        assert client.post("/api/auth/pats", json={"name": "   "}).status_code == 422
-        assert client.post("/api/auth/pats", json={"name": "x" * 81}).status_code == 422
+        assert client.post("/api/auth/personal-tokens", json={"name": "   "}).status_code == 422
+        assert client.post("/api/auth/personal-tokens", json={"name": "x" * 81}).status_code == 422

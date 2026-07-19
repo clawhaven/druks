@@ -5,7 +5,6 @@ import { api } from '../api/client'
 import { ExtensionGlyph } from './ExtensionGlyph'
 import { LoginSteps, useHarnessLogin } from './HarnessLogin'
 import {
-  type CreatedPat,
   type Harness,
   type ExtensionSettings,
   type McpRegistryCandidate,
@@ -1407,7 +1406,9 @@ export function AgentAccessPane() {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [minted, setMinted] = useState<CreatedPat | null>(null)
+  // The mint answers only the plaintext; the name is the one the operator just
+  // typed, held here alongside it for the copy-once banner.
+  const [minted, setMinted] = useState<{ name: string; token: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const pats = patsQuery.data ?? []
 
@@ -1421,7 +1422,7 @@ export function AgentAccessPane() {
     setError(null)
     try {
       const created = await api.createPat(value)
-      setMinted(created)
+      setMinted({ name: value, token: created.token })
       setCopied(false)
       setName('')
       await refresh()

@@ -434,8 +434,8 @@ export interface McpRegistryCandidate {
 }
 
 // A personal access token an agent presents as `Authorization: Bearer …` to
-// call this same API. Only the prefix ever appears here; the secret is
-// returned once, at mint, as CreatedPat.token.
+// call this same API. Only the prefix ever appears here; the plaintext is
+// returned once, at mint, and nowhere else.
 export interface Pat {
   id: string
   name: string
@@ -447,11 +447,6 @@ export interface Pat {
   isActive: boolean
   isExpired: boolean
   isRevoked: boolean
-}
-
-export interface CreatedPat extends Pat {
-  /** The full plaintext, shown exactly once — druks stores only a hash. */
-  token: string
 }
 
 export interface McpServer {

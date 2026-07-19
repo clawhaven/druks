@@ -32,14 +32,14 @@ describe('personal access tokens', () => {
 
     await api.createPat('ci bot')
     const createCall = fetchMock.mock.calls[0]
-    expect(createCall?.[0]).toBe('/api/auth/pats')
+    expect(createCall?.[0]).toBe('/api/auth/personal-tokens')
     expect(createCall?.[1]?.method).toBe('POST')
     expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({ name: 'ci bot' })
 
     // Revoke answers the updated row, so the client parses the DELETE body.
     const revoked = await api.revokePat('p1')
     const revokeCall = fetchMock.mock.calls[1]
-    expect(revokeCall?.[0]).toBe('/api/auth/pats/p1')
+    expect(revokeCall?.[0]).toBe('/api/auth/personal-tokens/p1')
     expect(revokeCall?.[1]?.method).toBe('DELETE')
     expect(revoked.isRevoked).toBe(true)
   })

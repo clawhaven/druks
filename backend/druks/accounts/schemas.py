@@ -17,7 +17,9 @@ class PatResponse(BaseResponse):
 
     id: str
     name: str
-    # Wire name is the spec's `prefix`; the column keeps its qualified name.
+    # The token's visible handle — the secret is unrecoverable, so the prefix
+    # is how a row is identified in the list and how a token string found in
+    # the wild maps back to what to revoke.
     prefix: str = Field(validation_alias="token_prefix")
     created_at: datetime
     expires_at: datetime
@@ -26,8 +28,3 @@ class PatResponse(BaseResponse):
     is_active: bool
     is_expired: bool
     is_revoked: bool
-
-
-class CreatedPatResponse(PatResponse):
-    # The plaintext, returned exactly once at create — never stored or listed.
-    token: str
