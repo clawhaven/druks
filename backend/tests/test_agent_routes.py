@@ -13,10 +13,9 @@ from conftest import (
 from druks.accounts.models import Account
 from druks.build import agent as build_agent
 from druks.build.workflows import BuildWorkflow
-from druks.durable import agent as durable_agent
 from druks.durable.models import Run
 from druks.durable.reads import read_transcript_chunk
-from druks.usage import agent as usage_agent
+from druks.mcp.gateway import services
 from fastapi.testclient import TestClient
 
 _IN_APP_ASK = {
@@ -132,7 +131,7 @@ def test_get_gate_then_answer_roundtrip(client: TestClient, db_session, resume_s
     view = client.get(f"/api/agent/gates/{run.id}")
     assert view.status_code == 200
     data = view.json()
-    assert data == durable_agent.get_gate(run.id).model_dump(mode="json", by_alias=True)
+    assert data == services.get_gate(run.id).model_dump(mode="json", by_alias=True)
 
     answered = client.post(
         f"/api/agent/gates/{run.id}/answer",
@@ -249,9 +248,7 @@ def test_work_routes_match_the_services(client: TestClient, db_session, account)
     call_id = detail.json()["runs"][0]["agentCalls"][0]["id"]
     call = client.get(f"/api/agent/agent-calls/{call_id}")
     assert call.status_code == 200
-    assert call.json() == durable_agent.get_agent_call(call_id).model_dump(
-        mode="json", by_alias=True
-    )
+    assert call.json() == services.get_agent_call(call_id).model_dump(mode="json", by_alias=True)
 
 
 def test_board_status_matches_list_work(client: TestClient, db_session, account):
@@ -341,7 +338,7 @@ def test_usage_agent_route_matches_the_service(client: TestClient, db_session, a
     response = client.get("/api/usage/agent")
     assert response.status_code == 200
     body = response.json()
-    assert body == usage_agent.get_usage(account).model_dump(mode="json", by_alias=True)
+    assert body == services.get_usage(account).model_dump(mode="json", by_alias=True)
     assert len(response.content) <= 4 * 1024
 
     today = client.get("/api/usage/today").json()

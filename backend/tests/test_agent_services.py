@@ -8,8 +8,10 @@ from druks.accounts.models import Account
 from druks.build import agent as build_agent
 from druks.build.exceptions import InvalidCursor, WorkItemNotFound
 from druks.build.workflows import BuildWorkflow
-from druks.durable import agent as durable_agent
-from druks.durable.exceptions import (
+from druks.durable.models import Artifact, Run
+from druks.durable.reads import read_slice
+from druks.mcp.gateway import services
+from druks.mcp.gateway.exceptions import (
     AgentCallNotFound,
     GateNotAnswerable,
     GateNotOpen,
@@ -18,9 +20,6 @@ from druks.durable.exceptions import (
     RunNotActive,
     RunNotFound,
 )
-from druks.durable.models import Artifact, Run
-from druks.durable.reads import read_slice
-from druks.usage import agent as usage_agent
 from druks.usage.models import UsageScrape
 
 pytestmark = pytest.mark.usefixtures("_data_dir")
@@ -177,7 +176,7 @@ def test_get_gate_returns_ask_schema_and_parked_at(db_session):
     question = {"id": "q1", "prompt": "Which db?", "options": [{"id": "pg", "label": "Postgres"}]}
     run = _park(db_session, item.id, ask=_in_app_ask([question]))
 
-    view = durable_agent.get_gate(run.id)
+    view = services.get_gate(run.id)
 
     assert view.run_id == run.id
     assert view.gate == "review"
@@ -198,7 +197,7 @@ def test_get_gate_bounds_an_agent_authored_ask(db_session):
     }
     run = _park(db_session, item.id, ask=_in_app_ask([question]))
 
-    view = durable_agent.get_gate(run.id)
+    view = services.get_gate(run.id)
 
     prompt = view.ask["questions"][0]["prompt"]
     label = view.ask["questions"][0]["options"][0]["label"]
@@ -217,7 +216,7 @@ def test_get_gate_serves_a_bounded_artifact_chunk(db_session):
         call_dir=call.call_dir, call_id=call.id, kind="markdown", title="Plan", content="x" * 10240
     )
 
-    view = durable_agent.get_gate(run.id)
+    view = services.get_gate(run.id)
 
     assert view.artifact is not None
     assert view.artifact.call_id == call.id
@@ -228,12 +227,12 @@ def test_get_gate_serves_a_bounded_artifact_chunk(db_session):
 
 def test_get_gate_refuses_when_not_parked_or_external(db_session):
     with pytest.raises(RunNotFound):
-        durable_agent.get_gate("no-such-run")
+        services.get_gate("no-such-run")
 
     item = make_test_work_item(repo="o/r", title="t")
     running = seed_build_run(db_session, work_item_id=item.id, state="running")
     with pytest.raises(GateNotOpen):
-        durable_agent.get_gate(running.id)
+        services.get_gate(running.id)
 
     external_item = make_test_work_item(repo="o/r2", title="t")
     external = _park(
@@ -242,14 +241,14 @@ def test_get_gate_refuses_when_not_parked_or_external(db_session):
         ask={"presentation": "external", "label": "Answer on the ticket"},
     )
     with pytest.raises(GateNotAnswerable):
-        durable_agent.get_gate(external.id)
+        services.get_gate(external.id)
 
 
 async def test_answer_gate_resumes_through_run_resume(db_session, resume_spy):
     item = make_test_work_item(repo="o/r", title="t")
     run = _park(db_session, item.id)
 
-    result = await durable_agent.answer_gate(
+    result = await services.answer_gate(
         run.id,
         parked_at=run.input_requested_at,
         control="approve",
@@ -270,7 +269,7 @@ async def test_answer_gate_uses_the_receipt_for_already_answered(db_session, res
     run.answered_parked_at = parked_at
     db_session.flush()
 
-    result = await durable_agent.answer_gate(
+    result = await services.answer_gate(
         run.id, parked_at=parked_at, control="approve", answers={}, note=""
     )
 
@@ -280,21 +279,21 @@ async def test_answer_gate_uses_the_receipt_for_already_answered(db_session, res
 
 async def test_answer_gate_error_taxonomy(db_session, resume_spy):
     with pytest.raises(RunNotFound):
-        await durable_agent.answer_gate(
+        await services.answer_gate(
             "no-such-run", parked_at=datetime.now(UTC), control="approve", answers={}, note=""
         )
 
     item = make_test_work_item(repo="o/r", title="t")
     finished = seed_build_run(db_session, work_item_id=item.id, state="finished")
     with pytest.raises(GateNotOpen):
-        await durable_agent.answer_gate(
+        await services.answer_gate(
             finished.id, parked_at=datetime.now(UTC), control="approve", answers={}, note=""
         )
 
     parked_item = make_test_work_item(repo="o/r2", title="t")
     run = _park(db_session, parked_item.id)
     with pytest.raises(GateRoundStale):
-        await durable_agent.answer_gate(
+        await services.answer_gate(
             run.id,
             parked_at=run.input_requested_at - timedelta(seconds=5),
             control="approve",
@@ -302,11 +301,11 @@ async def test_answer_gate_error_taxonomy(db_session, resume_spy):
             note="",
         )
     with pytest.raises(InvalidGateAnswer):
-        await durable_agent.answer_gate(
+        await services.answer_gate(
             run.id, parked_at=run.input_requested_at, control="merge", answers={}, note=""
         )
     with pytest.raises(InvalidGateAnswer):
-        await durable_agent.answer_gate(
+        await services.answer_gate(
             run.id,
             parked_at=run.input_requested_at,
             control="approve",
@@ -321,7 +320,7 @@ async def test_answer_gate_error_taxonomy(db_session, resume_spy):
         ask={"presentation": "external", "label": "Answer on the ticket"},
     )
     with pytest.raises(GateNotAnswerable):
-        await durable_agent.answer_gate(
+        await services.answer_gate(
             external.id,
             parked_at=external.input_requested_at,
             control="approve",
@@ -347,7 +346,7 @@ def test_get_agent_call_serves_bounded_tails(db_session):
         call_dir=call_dir, call_id=call.id, kind="markdown", title="Out", content="a" * 10240
     )
 
-    detail = durable_agent.get_agent_call(call.id)
+    detail = services.get_agent_call(call.id)
 
     assert detail.run_id == call.run_id
     assert detail.call.id == call.id
@@ -362,7 +361,7 @@ def test_get_agent_call_serves_bounded_tails(db_session):
     assert len(detail.artifact.chunk.text.encode()) <= 4096
 
     with pytest.raises(AgentCallNotFound):
-        durable_agent.get_agent_call("no-such-call")
+        services.get_agent_call("no-such-call")
 
 
 def test_get_agent_call_without_files_reads_empty(db_session):
@@ -370,7 +369,7 @@ def test_get_agent_call_without_files_reads_empty(db_session):
 
     call = seed_agent_run()
 
-    detail = durable_agent.get_agent_call(call.id)
+    detail = services.get_agent_call(call.id)
 
     assert detail.transcript.text == ""
     assert detail.transcript.eof is True
@@ -385,22 +384,22 @@ async def test_cancel_run_paths(db_session):
     item = make_test_work_item(repo="o/r", title="t")
     run = seed_build_run(db_session, work_item_id=item.id, state="running")
 
-    result = await durable_agent.cancel_run(run.id, reason="stuck")
+    result = await services.cancel_run(run.id, reason="stuck")
     assert result.result == "cancelled"
     db_session.expire_all()
     assert Run.get(run.id).state == "cancelled"
     assert Run.get(run.id).failure == "stuck"
 
-    again = await durable_agent.cancel_run(run.id, reason="stuck")
+    again = await services.cancel_run(run.id, reason="stuck")
     assert again.result == "already_cancelled"
 
     finished_item = make_test_work_item(repo="o/r2", title="t")
     finished = seed_build_run(db_session, work_item_id=finished_item.id, state="finished")
     with pytest.raises(RunNotActive):
-        await durable_agent.cancel_run(finished.id, reason="late")
+        await services.cancel_run(finished.id, reason="late")
 
     with pytest.raises(RunNotFound):
-        await durable_agent.cancel_run("no-such-run", reason="x")
+        await services.cancel_run("no-such-run", reason="x")
 
 
 # ---- work board -----------------------------------------------------------
@@ -594,7 +593,7 @@ def test_get_usage_is_a_bounded_pure_read(db_session, account):
             week_resets_at=now + timedelta(days=3),
         ).save()
 
-    usage = usage_agent.get_usage(account)
+    usage = services.get_usage(account)
 
     assert usage.runs_today == 30
     assert usage.spend_today_usd == pytest.approx(15.0)
@@ -628,7 +627,7 @@ def test_get_usage_only_counts_the_callers_spend(db_session, account):
     )
     db_session.flush()
 
-    usage = usage_agent.get_usage(account)
+    usage = services.get_usage(account)
 
     assert usage.runs_today == 0
     assert usage.spend_today_usd == 0.0

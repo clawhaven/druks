@@ -1,4 +1,4 @@
-from druks.exceptions import AgentApiError
+from druks.mcp.gateway.exceptions import AgentApiError
 
 
 class InvalidCursor(AgentApiError):

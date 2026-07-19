@@ -11,15 +11,15 @@ from starlette.datastructures import MutableHeaders
 
 from druks.accounts.dependencies import current_account
 from druks.accounts.routes import router as auth_router
-from druks.api.agent import router as agent_router
 from druks.api.artifacts import router as artifacts_router
 from druks.api.runs import router as runs_router
 from druks.database import configure_session, create_engine_from_url, db_session
 from druks.durable.engine import init_dbos, launch, shutdown
 from druks.events.routes import router as events_router
-from druks.exceptions import AgentApiError
 from druks.extensions.loader import iter_extensions, load
 from druks.mcp.catalog import load_mcp_catalog
+from druks.mcp.gateway.exceptions import AgentApiError
+from druks.mcp.gateway.routes import router as agent_router
 from druks.mcp.routes import router as mcp_router
 from druks.notifications.routes import external_router as notifications_external_router
 from druks.notifications.routes import router as notifications_router

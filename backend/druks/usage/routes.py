@@ -7,11 +7,9 @@ from druks.accounts.models import Account
 from druks.harnesses.artifacts import normalize_token_usage
 from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harnesses
-from druks.usage import agent
 from druks.usage.models import UsageScrape
 from druks.usage.reads import FIVE_HOUR_RANGE, WEEK_RANGE, downsample, list_finished_calls_today
 from druks.usage.schemas import (
-    AgentUsage,
     UsageHarnessHistory,
     UsageHarnessSummary,
     UsageHarnessToday,
@@ -135,21 +133,6 @@ async def get_usage_today(account: Account = Depends(current_account)) -> UsageT
             for name in included
         ],
     )
-
-
-# /api/usage/agent                                            the agent surface
-
-agent_router = APIRouter(tags=["agent"])
-
-
-@agent_router.get(
-    "/agent",
-    operation_id="get_usage",
-    response_model=AgentUsage,
-    response_model_by_alias=True,
-)
-async def get_agent_usage(account: Account = Depends(current_account)) -> AgentUsage:
-    return agent.get_usage(account)
 
 
 def _harness_history(name: str, account_id: str, *, now: datetime) -> UsageHarnessHistory:
