@@ -433,6 +433,20 @@ export interface McpRegistryCandidate {
   headers: RegistryHeader[]
 }
 
+// A personal access token an agent presents as `Authorization: Bearer …` to
+// call this same API. Only the prefix ever appears here; the plaintext is
+// returned once, at mint, and nowhere else.
+export interface Pat {
+  id: string
+  name: string
+  prefix: string
+  createdAt: string
+  expiresAt: string
+  lastUsedAt: string | null
+  revokedAt: string | null
+  status: 'active' | 'expired' | 'revoked'
+}
+
 export interface McpServer {
   name: string
   url: string

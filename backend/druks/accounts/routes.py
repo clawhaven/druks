@@ -1,9 +1,14 @@
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response
 
 from druks.accounts import sessions
-from druks.accounts.dependencies import current_account, resolve_session_account
-from druks.accounts.models import Account
-from druks.accounts.schemas import AccountResponse
+from druks.accounts.constants import PAT_NAME_LENGTH
+from druks.accounts.dependencies import (
+    current_account,
+    current_session_account,
+    resolve_session_account,
+)
+from druks.accounts.models import Account, PersonalAccessToken
+from druks.accounts.schemas import AccountResponse, PatResponse
 from druks.harnesses.base import Harness
 from druks.harnesses.exceptions import LoginError
 from druks.harnesses.models import HarnessConnection
@@ -37,8 +42,10 @@ def _set_session_cookie(request: Request, response: Response, token: str) -> Non
 async def get_session(
     request: Request, response: Response, account: Account = Depends(current_account)
 ) -> Account:
-    # Slide the cookie with the Redis TTL.
-    _set_session_cookie(request, response, request.cookies[sessions.SESSION_COOKIE])
+    # Slide the cookie with the Redis TTL; a Bearer request carries none.
+    token = request.cookies.get(sessions.SESSION_COOKIE)
+    if token:
+        _set_session_cookie(request, response, token)
     return account
 
 
@@ -102,3 +109,41 @@ async def logout(request: Request, response: Response) -> None:
     if token:
         await sessions.drop_session(token)
     _set_session_cookie(request, response, "")
+
+
+@router.get("/personal-tokens", response_model=list[PatResponse], response_model_by_alias=True)
+async def list_pats(
+    account: Account = Depends(current_session_account),
+) -> list[PersonalAccessToken]:
+    return PersonalAccessToken.list_for_account(account.id)
+
+
+@router.post("/personal-tokens")
+async def create_pat(
+    account: Account = Depends(current_session_account),
+    name: str = Body(..., embed=True),
+) -> dict[str, str]:
+    name = name.strip()
+    if name and len(name) <= PAT_NAME_LENGTH:
+        # The plaintext, handed back exactly once — only its hash is stored,
+        # and the new row surfaces through the list.
+        _, token = PersonalAccessToken.create(account_id=account.id, name=name)
+        return {"token": token}
+    raise HTTPException(
+        status_code=422,
+        detail=f"A token needs a name of at most {PAT_NAME_LENGTH} characters.",
+    )
+
+
+@router.delete(
+    "/personal-tokens/{pat_id}", response_model=PatResponse, response_model_by_alias=True
+)
+async def revoke_pat(
+    pat_id: str, account: Account = Depends(current_session_account)
+) -> PersonalAccessToken:
+    pat = PersonalAccessToken.get(pat_id)
+    if pat and pat.account_id == account.id:
+        pat.revoke()
+        return pat
+    # One shape for missing and foreign — existence stays account-scoped.
+    raise HTTPException(status_code=404, detail="No such token.")

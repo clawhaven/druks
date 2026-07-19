@@ -7,6 +7,7 @@ import type {
   ExtensionsSettingsResponse,
   Harness,
   LoginChallenge,
+  Pat,
   SubjectResponse,
   SubjectSummary,
   UpdateHarnessRequest,
@@ -201,6 +202,14 @@ export const api = {
       `/api/skills/${encodeURIComponent(collectionId)}/skills/${encodeURIComponent(name)}`,
       { enabled },
     ),
+
+  // Personal access tokens — the agent door to this same API. The plaintext
+  // comes back once, on mint; list rows carry the prefix only. Management is
+  // session-only, so these calls always ride the cookie.
+  pats: () => getJSON<Pat[]>('/api/auth/personal-tokens'),
+  createPat: (name: string) => postJSON<{ token: string }>('/api/auth/personal-tokens', { name }),
+  revokePat: (id: string) =>
+    deleteJSON<Pat>(`/api/auth/personal-tokens/${encodeURIComponent(id)}`),
 
   // MCP servers — a backend-owned registry, delivered into every agent VM. The
   // token is write-only: sent on create, redacted in every response. Keyed by
