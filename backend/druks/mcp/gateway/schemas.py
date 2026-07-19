@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 from druks.durable.schemas import AgentCallSummary, TextSlice
 from druks.schemas import BaseResponse
@@ -17,7 +18,7 @@ class ArtifactChunk(BaseResponse):
     chunk: TextSlice
 
 
-class GateView(BaseResponse):
+class GateDetail(BaseResponse):
     # Everything needed to answer a parked run in one read: the ask, the
     # artifact under review, the reply's JSON Schema, and parked_at — the park
     # identity answer_gate must echo back.
@@ -33,6 +34,18 @@ class GateAnswerResult(BaseResponse):
     run_id: str
     parked_at: datetime
     result: Literal["answered", "already_answered"]
+
+
+class AnswerGateRequest(BaseModel):
+    # parkedAt echoes get_gate's response key unchanged — the park identity the
+    # answer must land on; one camelCase wire both directions. The rest mirrors
+    # ResumeRequest: a control the ask offered, an answer per open question, an
+    # optional free-text note.
+    model_config = ConfigDict(str_strip_whitespace=True, alias_generator=to_camel)
+    parked_at: AwareDatetime
+    control: str
+    answers: dict[str, str] = Field(default_factory=dict)
+    note: str = ""
 
 
 class AgentCallDetail(BaseResponse):

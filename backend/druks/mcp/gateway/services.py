@@ -30,7 +30,7 @@ from druks.mcp.gateway.schemas import (
     ArtifactChunk,
     CancelRunResult,
     GateAnswerResult,
-    GateView,
+    GateDetail,
 )
 from druks.notifications.exceptions import InvalidChoiceError
 from druks.notifications.services import validate_in_app_answer
@@ -71,7 +71,7 @@ def _bounded_ask(ask: dict[str, Any]) -> dict[str, Any]:
     return {**ask, "questions": questions}
 
 
-def get_gate(run_id: str) -> GateView:
+def get_gate(run_id: str) -> GateDetail:
     run = Run.get(run_id)
     if not run:
         raise RunNotFound(run_id)
@@ -83,7 +83,7 @@ def get_gate(run_id: str) -> GateView:
         # comment); an ask-less park offers no reply contract either.
         raise GateNotAnswerable(run_id)
     ask = _bounded_ask(run.get_ask())
-    return GateView(
+    return GateDetail(
         run_id=run.id,
         gate=run.input_gate,  # type: ignore[arg-type]
         parked_at=run.input_requested_at,  # type: ignore[arg-type]

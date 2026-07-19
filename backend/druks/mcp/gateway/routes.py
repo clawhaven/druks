@@ -1,8 +1,6 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Body, Depends
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
 
 from druks.accounts.dependencies import current_account
 from druks.accounts.models import Account
@@ -10,33 +8,22 @@ from druks.mcp.gateway import services
 from druks.mcp.gateway.schemas import (
     AgentCallDetail,
     AgentUsage,
+    AnswerGateRequest,
     CancelRunResult,
     GateAnswerResult,
-    GateView,
+    GateDetail,
 )
 
 router = APIRouter(tags=["agent"])
 
 
-class AnswerGateRequest(BaseModel):
-    # parkedAt echoes get_gate's response key unchanged — the park identity the
-    # answer must land on; one camelCase wire both directions. The rest mirrors
-    # ResumeRequest: a control the ask offered, an answer per open question, an
-    # optional free-text note.
-    model_config = ConfigDict(str_strip_whitespace=True, alias_generator=to_camel)
-    parked_at: AwareDatetime
-    control: str
-    answers: dict[str, str] = Field(default_factory=dict)
-    note: str = ""
-
-
 @router.get(
     "/api/agent/gates/{run_id}",
     operation_id="get_gate",
-    response_model=GateView,
+    response_model=GateDetail,
     response_model_by_alias=True,
 )
-async def get_gate(run_id: str) -> GateView:
+async def get_gate(run_id: str) -> GateDetail:
     return services.get_gate(run_id)
 
 
