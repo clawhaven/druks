@@ -1,32 +1,21 @@
 # Usage's half of the agent surface: one pure read of the caller's quota and
-# today's spend — no poll trigger; refresh stays route-driven. The dashboard
-# routes share the day-window read and the downsampler declared here.
-from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
-
-from sqlalchemy import Row, select
+# today's spend — no poll trigger; refresh stays route-driven.
+from datetime import UTC, datetime
 
 from druks.accounts.models import Account
-from druks.core.utils.time import operator_local_day
-from druks.database import db_session
-from druks.durable.models import AgentCall
-from druks.durable.schemas import clip
 from druks.harnesses.artifacts import normalize_token_usage
 from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harnesses
+from druks.schemas import clip
 from druks.usage.models import UsageScrape
+from druks.usage.reads import (
+    _HISTORY_POINTS,
+    FIVE_HOUR_RANGE,
+    WEEK_RANGE,
+    downsample,
+    list_finished_calls_today,
+)
 from druks.usage.schemas import AgentHarnessUsage, AgentUsage, UsageHistoryPoint
-from druks.user_settings.models import UserSettings
-
-# Trend ranges for the percent-left sparklines. The 5h window gets one full
-# window plus headroom so an exhaustion arc is visible end to end; weekly gets
-# the whole week.
-FIVE_HOUR_RANGE = timedelta(hours=6)
-WEEK_RANGE = timedelta(days=7)
-
-# The agent read keeps each trend this short so the whole response stays
-# within its byte budget.
-_HISTORY_POINTS = 8
 
 
 def get_usage(account: Account) -> AgentUsage:
@@ -48,41 +37,6 @@ def get_usage(account: Account) -> AgentUsage:
         runs_today=len(rows),
         harnesses=[_harness_usage(h.name, account.id, now=now) for h in get_harnesses()],
     )
-
-
-def list_finished_calls_today(account_id: str) -> tuple[ZoneInfo, datetime, list[Row]]:
-    # The account's finished calls in the operator-local day, as (timezone,
-    # local_start, rows of (model, cost_usd, cost_metadata, finished_at)) —
-    # the shared boundary keeps every spend-today figure identical.
-    timezone, local_start = operator_local_day(UserSettings.get().timezone, datetime.now(UTC))
-    rows = (
-        db_session()
-        .execute(
-            select(
-                AgentCall.model,
-                AgentCall.cost_usd,
-                AgentCall.cost_metadata,
-                AgentCall.finished_at,
-            )
-            .where(AgentCall.account_id == account_id)
-            .where(AgentCall.finished_at.is_not(None))
-            .where(AgentCall.finished_at >= local_start.astimezone(UTC))
-            .where(AgentCall.finished_at < (local_start + timedelta(days=1)).astimezone(UTC)),
-        )
-        .all()
-    )
-    return timezone, local_start, rows
-
-
-def downsample(points: list[UsageHistoryPoint], *, cap: int) -> list[UsageHistoryPoint]:
-    # Thin a series to ≤ cap points, always keeping the newest sample (the
-    # "now" anchor) — it replaces the last strided sample so the cap holds.
-    if len(points) <= cap:
-        return points
-    stride = -(-len(points) // cap)  # ceil division
-    thinned = points[::stride]
-    thinned[-1] = points[-1]
-    return thinned
 
 
 def _harness_usage(name: str, account_id: str, *, now: datetime) -> AgentHarnessUsage:

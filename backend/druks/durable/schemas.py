@@ -1,4 +1,3 @@
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -6,7 +5,7 @@ from typing import Any, Literal
 from pydantic import Field, SerializeAsAny
 
 from druks.harnesses.artifacts import normalize_token_usage
-from druks.schemas import BaseResponse
+from druks.schemas import BaseResponse, clip
 
 from .enums import AgentCallStatus, RunState
 from .models import AgentCall, Artifact, Run
@@ -29,29 +28,6 @@ def _token_usage(cost_metadata: dict | None) -> TokenUsage | None:
 def get_display_label(kind: str) -> str:
     # "build.build_workflow" → "Build workflow"; "implement" → "Implement".
     return kind.rsplit(".", 1)[-1].replace("_", " ").capitalize()
-
-
-def _wire_cost(char: str) -> int:
-    # What one character spends of a wire budget: its JSON-escaped UTF-8 bytes
-    # (a control byte like ESC serializes as  — six bytes, not one).
-    return len(json.dumps(char, ensure_ascii=False).encode()) - 2
-
-
-def clip(text: str | None, limit: int) -> str | None:
-    # Budgeted read-sides bound their free-text fields by what the field will
-    # occupy in the serialized response, so the budgets hold for multibyte and
-    # escape-heavy text alike. The ellipsis (3 bytes) marks the cut.
-    if not text:
-        return text
-    total = 0
-    cut = None
-    for index, char in enumerate(text):
-        total += _wire_cost(char)
-        if cut is None and total > limit - 3:
-            cut = index
-        if total > limit:
-            return text[:cut] + "…"
-    return text
 
 
 def _derived_status(call: AgentCall) -> str:
