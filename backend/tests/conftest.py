@@ -144,10 +144,10 @@ def _no_durable_dispatch(request):
         yield
         return
 
-    from druks.workflows import Workflow
+    from druks.workflows import Workflow, WorkflowStartResult
 
     async def _noop(*args, **kwargs):
-        return ""
+        return WorkflowStartResult(run_id="", is_duplicate=False)
 
     async def _phase_noop(*args, **kwargs):
         pass
