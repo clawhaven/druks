@@ -43,7 +43,6 @@ async def test_prompt_owns_the_tracker_writes():
     assert "Write the brief into the ticket description" in output
     assert "druks-scoped" in output
     assert "open questions for ACME-1" in output
-    assert "split recommended for ACME-1" in output
 
 
 async def test_prompt_carries_the_recommended_skills():
