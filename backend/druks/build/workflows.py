@@ -182,14 +182,12 @@ class BuildWorkflow(Workflow):
         task_owner_email: str | None = None,
         task_owner_name: str | None = None,
     ) -> None:
-        work_item_id = self.subject["id"] if self.subject else None
-        self._work_item_id = work_item_id
         # Resolve the repo's policy + profile and the operator settings inside
         # steps so their reads are memoized — the body itself does no IO, and
         # replay reuses the values.
-        snapshot = await self._load_policy_and_profile()
-        self._policy = RepoPolicy.model_validate(snapshot["policy"])
-        self._profile = snapshot["profile"]
+        resolved = await self._load_policy_and_profile()
+        self._policy = RepoPolicy.model_validate(resolved["policy"])
+        self._profile = resolved["profile"]
         self._settings = await self._load_settings()
 
         if not await self._plan_phase():
@@ -275,11 +273,7 @@ class BuildWorkflow(Workflow):
 
     @step
     async def _load_policy_and_profile(self) -> dict[str, Any]:
-        # One memoized read: the work item's dispatch-time snapshot when present,
-        # else the live policy + the repo's profiled facts.
-        item = WorkItem.get(self._work_item_id) if self._work_item_id else None
-        if item and item.extension_config_snapshot:
-            return item.extension_config_snapshot
+        # One memoized read: the live policy + the repo's profiled facts.
         policy = await RepoPolicy.resolve(self.input.repo)
         # A build dispatches against a work item whose repo is registered.
         target = ProjectRepo.get_for_repo(self.input.repo)

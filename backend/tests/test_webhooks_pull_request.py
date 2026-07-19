@@ -10,6 +10,16 @@ from druks.events.models import Event
 from sqlalchemy import func, select
 
 
+@pytest.fixture(autouse=True)
+def _stub_config_fetch(monkeypatch):
+    # The external-close path resolves the repo's live .druks/build/config.yml;
+    # default to "no file" (default policy) so tests don't reach GitHub.
+    async def _fetch(*, repo, path):
+        return None
+
+    monkeypatch.setattr("druks.extensions.config.fetch_file", _fetch)
+
+
 def _milestone_count(work_item_id, milestone):
     from druks.database import db_session
 
@@ -235,9 +245,14 @@ async def test_external_merge_pushes_done(db_session, tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_external_close_honors_delete_branch_policy(db_session, tmp_path, monkeypatch):
-    """delete_branch: false in the item's extension-config snapshot keeps the
+    """delete_branch: false in the repo's live .druks/build/config.yml keeps the
     head branch on an external close."""
     from druks.build import subscribers as webhooks_mod
+
+    async def _fetch(*, repo, path):
+        return "delete_branch: false\n"
+
+    monkeypatch.setattr("druks.extensions.config.fetch_file", _fetch)
 
     deleted = []
 
@@ -247,12 +262,7 @@ async def test_external_close_honors_delete_branch_policy(db_session, tmp_path, 
     monkeypatch.setattr(webhooks_mod, "_delete_branch", _record)
 
     repo, pr_number, branch = "ClawHaven/acme-app", 93, "agent/eng-22"
-    work_item_id, _ = _park_work_item(repo=repo, pr_number=pr_number, branch=branch)
-    from druks.build.models import WorkItem
-
-    WorkItem.get(work_item_id).update(
-        extension_config_snapshot={"policy": {"delete_branch": False}}
-    )
+    _park_work_item(repo=repo, pr_number=pr_number, branch=branch)
 
     await _fire_closed(
         repo=repo, pr_number=pr_number, branch=branch, tmp_path=tmp_path, merged=False
@@ -280,3 +290,42 @@ async def test_external_close_deletes_branch_by_default(db_session, tmp_path, mo
     )
 
     assert deleted == [(repo, branch)]
+
+
+@pytest.mark.asyncio
+async def test_external_close_survives_policy_resolution_failure(db_session, tmp_path, monkeypatch):
+    """Branch cleanup is best-effort: a policy-resolution failure must not strand
+    the ticket — the cancel and resting-pool reset still happen."""
+    from druks.build import subscribers as webhooks_mod
+    from druks.build.policy import RepoPolicy
+    from druks.ticketing.enums import SemanticStatus
+
+    async def _boom(cls, repo):
+        raise RuntimeError("github down")
+
+    monkeypatch.setattr(RepoPolicy, "resolve", classmethod(_boom))
+
+    deleted = []
+
+    async def _delete(repo, branch):
+        deleted.append((repo, branch))
+
+    monkeypatch.setattr(webhooks_mod, "_delete_branch", _delete)
+
+    pushed = []
+
+    async def _record(self, status):
+        pushed.append(status)
+
+    monkeypatch.setattr(WorkItem, "set_remote_status", _record)
+
+    repo, pr_number, branch = "ClawHaven/acme-app", 95, "agent/eng-24"
+    work_item_id, _ = _park_work_item(repo=repo, pr_number=pr_number, branch=branch)
+
+    await _fire_closed(
+        repo=repo, pr_number=pr_number, branch=branch, tmp_path=tmp_path, merged=False
+    )
+
+    assert deleted == []  # cleanup skipped when policy can't be resolved
+    assert pushed == [SemanticStatus.READY_FOR_AGENT]  # ticket still reset
+    assert _milestone_count(work_item_id, "cancelled") == 1
