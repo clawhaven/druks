@@ -1,14 +1,15 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 
 from druks.accounts.dependencies import current_account
 from druks.accounts.models import Account
+from druks.core.utils.time import operator_local_day
 from druks.harnesses.artifacts import normalize_token_usage
 from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harnesses
 from druks.usage.models import UsageScrape
-from druks.usage.reads import list_finished_calls_today
+from druks.usage.reads import list_finished_calls
 from druks.usage.schemas import (
     UsageHarnessHistory,
     UsageHarnessSummary,
@@ -20,7 +21,7 @@ from druks.usage.schemas import (
     UsageTodayResponse,
 )
 from druks.usage.trends import FIVE_HOUR_RANGE, WEEK_RANGE, downsample
-from druks.user_settings.models import HarnessSettings
+from druks.user_settings.models import HarnessSettings, UserSettings
 
 router = APIRouter(tags=["usage"])
 
@@ -89,9 +90,10 @@ async def get_usage_history(account: Account = Depends(current_account)) -> Usag
     response_model_by_alias=True,
 )
 async def get_usage_today(account: Account = Depends(current_account)) -> UsageTodayResponse:
-    # The shared operator-local-day read keeps this total identical to the
-    # sys-strip's and the agent surface's spend-today figures.
-    timezone, local_start, rows = list_finished_calls_today(account.id)
+    # Deriving the operator-local-day window here (the query just takes it) keeps
+    # this total identical to the sys-strip's and the agent surface's figures.
+    timezone, local_start = operator_local_day(UserSettings.get().timezone, datetime.now(UTC))
+    rows = list_finished_calls(account.id, since=local_start, until=local_start + timedelta(days=1))
     timezone_name = str(timezone)
 
     # Every call counts, even one whose model no picker list claims (pinned

@@ -2,10 +2,11 @@
 # read/answer and cancel on runs, bounded agent-call detail, and the caller's
 # quota and spend — served to the /api/agent and /api/usage/agent routes and the
 # MCP tools.
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from druks.accounts.models import Account
+from druks.core.utils.time import operator_local_day
 from druks.database import db_session
 from druks.durable.enums import RunState
 from druks.durable.models import AgentCall, Artifact, Run
@@ -36,9 +37,10 @@ from druks.notifications.exceptions import InvalidChoiceError
 from druks.notifications.services import validate_in_app_answer
 from druks.schemas import clip
 from druks.usage.models import UsageScrape
-from druks.usage.reads import list_finished_calls_today
+from druks.usage.reads import list_finished_calls
 from druks.usage.schemas import UsageHistoryPoint
 from druks.usage.trends import FIVE_HOUR_RANGE, WEEK_RANGE, downsample
+from druks.user_settings.models import UserSettings
 
 _TRANSCRIPT_TAIL_BYTES = 8 * 1024
 _STDERR_TAIL_BYTES = 4 * 1024
@@ -199,7 +201,8 @@ def _reply_schema(ask: dict[str, Any]) -> dict[str, Any]:
 
 def get_usage(account: Account) -> AgentUsage:
     now = datetime.now(UTC)
-    timezone, local_start, rows = list_finished_calls_today(account.id)
+    timezone, local_start = operator_local_day(UserSettings.get().timezone, now)
+    rows = list_finished_calls(account.id, since=local_start, until=local_start + timedelta(days=1))
     spend = 0.0
     tokens = 0
     for _, cost_usd, cost_metadata, _ in rows:
