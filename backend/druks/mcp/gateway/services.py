@@ -10,24 +10,7 @@ from druks.durable.schemas import AgentCallResponse
 from druks.harnesses.artifacts import normalize_token_usage
 from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harnesses
-from druks.mcp.gateway.exceptions import (
-    AgentCallNotFound,
-    GateNotAnswerable,
-    GateNotOpen,
-    GateRoundStale,
-    InvalidGateAnswer,
-    RunNotActive,
-    RunNotFound,
-)
-from druks.mcp.gateway.schemas import (
-    AgentCallDetail,
-    AgentHarnessUsage,
-    AgentUsage,
-    ArtifactContent,
-    CancelRunResult,
-    GateAnswerResult,
-    GateDetail,
-)
+from druks.mcp.gateway import exceptions, schemas
 from druks.notifications.exceptions import InvalidChoiceError
 from druks.notifications.services import validate_in_app_answer
 from druks.usage.models import UsageScrape
@@ -42,16 +25,16 @@ _ARTIFACT_CHUNK_BYTES = 4 * 1024
 _HISTORY_POINTS = 8
 
 
-def get_gate(run_id: str) -> GateDetail:
+def get_gate(run_id: str) -> schemas.GateDetail:
     run = Run.get(run_id)
     if not run:
-        raise RunNotFound(run_id)
+        raise exceptions.RunNotFound(run_id)
     if run.state != RunState.PENDING_INPUT.value:
-        raise GateNotOpen(run_id)
+        raise exceptions.GateNotOpen(run_id)
     ask = run.input_request
     if not ask or ask.get("presentation") != "in_app":
-        raise GateNotAnswerable(run_id)
-    return GateDetail(
+        raise exceptions.GateNotAnswerable(run_id)
+    return schemas.GateDetail(
         run_id=run.id,
         gate=run.input_gate,  # type: ignore[arg-type]
         parked_at=run.input_requested_at,  # type: ignore[arg-type]
@@ -62,34 +45,36 @@ def get_gate(run_id: str) -> GateDetail:
 
 async def answer_gate(
     run_id: str, *, parked_at: datetime, control: str, answers: dict[str, str], note: str
-) -> GateAnswerResult:
+) -> schemas.GateAnswerResult:
     run = Run.get(run_id)
     if not run:
-        raise RunNotFound(run_id)
+        raise exceptions.RunNotFound(run_id)
     db_session().expire(run)  # the receipt/park comparison must read fresh
     if run.answer_parked_at == parked_at:
-        return GateAnswerResult(run_id=run.id, parked_at=parked_at, result="already_answered")
+        return schemas.GateAnswerResult(
+            run_id=run.id, parked_at=parked_at, result="already_answered"
+        )
     if run.state != RunState.PENDING_INPUT.value:
-        raise GateNotOpen(run_id)
+        raise exceptions.GateNotOpen(run_id)
     if run.input_requested_at != parked_at:
-        raise GateRoundStale(run_id)
+        raise exceptions.GateRoundStale(run_id)
     ask = run.input_request
     if not ask or ask.get("presentation") != "in_app":
-        raise GateNotAnswerable(run_id)
+        raise exceptions.GateNotAnswerable(run_id)
     try:
         payload = validate_in_app_answer(run.get_ask(), control, answers, note)
     except InvalidChoiceError as error:
-        raise InvalidGateAnswer(str(error)) from error
+        raise exceptions.InvalidGateAnswer(str(error)) from error
     await run.resume(**payload)
-    return GateAnswerResult(run_id=run.id, parked_at=parked_at, result="answered")
+    return schemas.GateAnswerResult(run_id=run.id, parked_at=parked_at, result="answered")
 
 
-def get_agent_call(call_id: str) -> AgentCallDetail:
+def get_agent_call(call_id: str) -> schemas.AgentCallDetail:
     call = AgentCall.get(call_id)
     if not call:
-        raise AgentCallNotFound(call_id)
+        raise exceptions.AgentCallNotFound(call_id)
     layout = call.artifact_layout
-    return AgentCallDetail(
+    return schemas.AgentCallDetail(
         run_id=call.run_id,
         call=AgentCallResponse.from_call(call),
         transcript=read_slice(
@@ -100,26 +85,26 @@ def get_agent_call(call_id: str) -> AgentCallDetail:
     )
 
 
-async def cancel_run(run_id: str, *, reason: str) -> CancelRunResult:
+async def cancel_run(run_id: str, *, reason: str) -> schemas.CancelRunResult:
     run = Run.get(run_id)
     if not run:
-        raise RunNotFound(run_id)
+        raise exceptions.RunNotFound(run_id)
     if run.state == RunState.CANCELLED.value:
-        return CancelRunResult(run_id=run.id, result="already_cancelled")
+        return schemas.CancelRunResult(run_id=run.id, result="already_cancelled")
     if not run.is_active:
-        raise RunNotActive(run_id)
+        raise exceptions.RunNotActive(run_id)
     await run.cancel(failure=reason)
-    return CancelRunResult(run_id=run.id, result="cancelled")
+    return schemas.CancelRunResult(run_id=run.id, result="cancelled")
 
 
-def _artifact_content(artifact: Artifact | None) -> ArtifactContent | None:
+def _artifact_content(artifact: Artifact | None) -> schemas.ArtifactContent | None:
     if not artifact:
         return
     call = AgentCall.get(artifact.agent_call_id)
     path = call.get_file_path(artifact.path) if call else None
     if not path:
         return
-    return ArtifactContent(
+    return schemas.ArtifactContent(
         call_id=artifact.agent_call_id,
         kind=artifact.kind,
         title=artifact.title,
@@ -127,7 +112,7 @@ def _artifact_content(artifact: Artifact | None) -> ArtifactContent | None:
     )
 
 
-def get_usage(account: Account) -> AgentUsage:
+def get_usage(account: Account) -> schemas.AgentUsage:
     now = datetime.now(UTC)
     timezone, local_start = operator_local_day(UserSettings.get().timezone, now)
     rows = list_finished_calls(account.id, since=local_start, until=local_start + timedelta(days=1))
@@ -139,7 +124,7 @@ def get_usage(account: Account) -> AgentUsage:
         usage = normalize_token_usage(cost_metadata)
         if usage:
             tokens += usage["total_tokens"]
-    return AgentUsage(
+    return schemas.AgentUsage(
         day=local_start.date().isoformat(),
         timezone=str(timezone),
         spend_today_usd=round(spend, 4),
@@ -149,11 +134,11 @@ def get_usage(account: Account) -> AgentUsage:
     )
 
 
-def _harness_usage(name: str, account_id: str, *, now: datetime) -> AgentHarnessUsage:
+def _harness_usage(name: str, account_id: str, *, now: datetime) -> schemas.AgentHarnessUsage:
     is_connected = bool(HarnessConnection.get_for_account(name, account_id))
     row = UsageScrape.latest_for(name, account_id)
     if not row:
-        return AgentHarnessUsage(name=name, is_connected=is_connected)
+        return schemas.AgentHarnessUsage(name=name, is_connected=is_connected)
     history = UsageScrape.history_for(name, account_id, since=now - WEEK_RANGE)
     five_hour_cutoff = now - FIVE_HOUR_RANGE
     five_hour = [
@@ -166,7 +151,7 @@ def _harness_usage(name: str, account_id: str, *, now: datetime) -> AgentHarness
         for point in history
         if point.week_percent_left is not None
     ]
-    return AgentHarnessUsage(
+    return schemas.AgentHarnessUsage(
         name=name,
         is_connected=is_connected,
         plan_tier=row.plan_tier,

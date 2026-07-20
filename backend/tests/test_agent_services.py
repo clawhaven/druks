@@ -7,15 +7,7 @@ from druks.accounts.models import Account
 from druks.durable.models import Artifact, Run
 from druks.durable.reads import read_slice
 from druks.mcp.gateway import services
-from druks.mcp.gateway.exceptions import (
-    AgentCallNotFound,
-    GateNotAnswerable,
-    GateNotOpen,
-    GateRoundStale,
-    InvalidGateAnswer,
-    RunNotActive,
-    RunNotFound,
-)
+from druks.mcp.gateway import exceptions
 from druks.usage.models import UsageScrape
 
 pytestmark = pytest.mark.usefixtures("_data_dir")
@@ -134,12 +126,12 @@ def test_get_gate_serves_the_artifact(db_session):
 
 
 def test_get_gate_refuses_when_not_parked_or_external(db_session):
-    with pytest.raises(RunNotFound):
+    with pytest.raises(exceptions.RunNotFound):
         services.get_gate("no-such-run")
 
     item = make_test_work_item(repo="o/r", title="t")
     running = seed_build_run(db_session, work_item_id=item.id, state="running")
-    with pytest.raises(GateNotOpen):
+    with pytest.raises(exceptions.GateNotOpen):
         services.get_gate(running.id)
 
     external_item = make_test_work_item(repo="o/r2", title="t")
@@ -148,7 +140,7 @@ def test_get_gate_refuses_when_not_parked_or_external(db_session):
         external_item.id,
         ask={"presentation": "external", "label": "Answer on the ticket"},
     )
-    with pytest.raises(GateNotAnswerable):
+    with pytest.raises(exceptions.GateNotAnswerable):
         services.get_gate(external.id)
 
 
@@ -186,21 +178,21 @@ async def test_answer_gate_uses_the_receipt_for_already_answered(db_session, res
 
 
 async def test_answer_gate_error_taxonomy(db_session, resume_spy):
-    with pytest.raises(RunNotFound):
+    with pytest.raises(exceptions.RunNotFound):
         await services.answer_gate(
             "no-such-run", parked_at=datetime.now(UTC), control="approve", answers={}, note=""
         )
 
     item = make_test_work_item(repo="o/r", title="t")
     finished = seed_build_run(db_session, work_item_id=item.id, state="finished")
-    with pytest.raises(GateNotOpen):
+    with pytest.raises(exceptions.GateNotOpen):
         await services.answer_gate(
             finished.id, parked_at=datetime.now(UTC), control="approve", answers={}, note=""
         )
 
     parked_item = make_test_work_item(repo="o/r2", title="t")
     run = _park(db_session, parked_item.id)
-    with pytest.raises(GateRoundStale):
+    with pytest.raises(exceptions.GateRoundStale):
         await services.answer_gate(
             run.id,
             parked_at=run.input_requested_at - timedelta(seconds=5),
@@ -208,7 +200,7 @@ async def test_answer_gate_error_taxonomy(db_session, resume_spy):
             answers={},
             note="",
         )
-    with pytest.raises(InvalidGateAnswer):
+    with pytest.raises(exceptions.InvalidGateAnswer):
         await services.answer_gate(
             run.id, parked_at=run.input_requested_at, control="merge", answers={}, note=""
         )
@@ -219,7 +211,7 @@ async def test_answer_gate_error_taxonomy(db_session, resume_spy):
         external_item.id,
         ask={"presentation": "external", "label": "Answer on the ticket"},
     )
-    with pytest.raises(GateNotAnswerable):
+    with pytest.raises(exceptions.GateNotAnswerable):
         await services.answer_gate(
             external.id,
             parked_at=external.input_requested_at,
@@ -256,7 +248,7 @@ def test_get_agent_call_serves_bounded_tails(db_session):
     assert detail.artifact is not None
     assert detail.artifact.content == "a" * 4096
 
-    with pytest.raises(AgentCallNotFound):
+    with pytest.raises(exceptions.AgentCallNotFound):
         services.get_agent_call("no-such-call")
 
 
@@ -290,10 +282,10 @@ async def test_cancel_run_paths(db_session):
 
     finished_item = make_test_work_item(repo="o/r2", title="t")
     finished = seed_build_run(db_session, work_item_id=finished_item.id, state="finished")
-    with pytest.raises(RunNotActive):
+    with pytest.raises(exceptions.RunNotActive):
         await services.cancel_run(finished.id, reason="late")
 
-    with pytest.raises(RunNotFound):
+    with pytest.raises(exceptions.RunNotFound):
         await services.cancel_run("no-such-run", reason="x")
 
 
