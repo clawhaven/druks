@@ -1,6 +1,3 @@
-# The inbound agent gateway's platform operations over shared primitives: gate
-# read/answer and cancel on runs, bounded agent-call detail, and the caller's
-# quota and spend — served under the /mcp routes and, in T4, the MCP tools.
 from datetime import UTC, datetime, timedelta
 from typing import Any
 

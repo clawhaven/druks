@@ -68,94 +68,30 @@ def _park(db_session, item_id, *, ask=None):
 # ---- read_slice -----------------------------------------------------------
 
 
-def test_read_slice_tail_snaps_a_split_character(tmp_path: Path):
+def test_read_slice_paginates_a_window(tmp_path: Path):
     path = tmp_path / "log.txt"
-    path.write_bytes(b"abcd" + "é".encode() + b"wxyz")
-
-    piece = read_slice(path, offset=-5, limit=5)
-
-    # Byte 5 is the é's continuation byte; the slice starts after it.
-    assert piece.offset == 6
-    assert piece.text == "wxyz"
-    assert piece.has_earlier is True
-    assert piece.eof is True
-
-
-def test_read_slice_head_trims_a_trailing_partial_character(tmp_path: Path):
-    path = tmp_path / "log.txt"
-    path.write_bytes(b"abcd" + "é".encode() + b"wxyz")
+    path.write_bytes(b"hello world")
 
     head = read_slice(path, offset=0, limit=5)
-    assert head.text == "abcd"
-    assert head.next_offset == 4
+    assert head.text == "hello"
+    assert head.next_offset == 5
     assert head.eof is False
     assert head.has_earlier is False
 
     rest = read_slice(path, offset=head.next_offset, limit=100)
-    assert rest.text == "éwxyz"
+    assert rest.text == " world"
     assert rest.eof is True
 
 
-def test_read_slice_trims_a_partial_four_byte_character(tmp_path: Path):
+def test_read_slice_reads_the_tail(tmp_path: Path):
     path = tmp_path / "log.txt"
-    payload = "ab🎉cd".encode()
-    path.write_bytes(payload)
+    path.write_bytes(b"hello world")
 
-    piece = read_slice(path, offset=0, limit=4)  # cuts the emoji after 2 of 4 bytes
-
-    assert piece.text == "ab"
-    assert piece.next_offset == 2
-
-
-def test_read_slice_tiny_limit_still_progresses(tmp_path: Path):
-    path = tmp_path / "log.txt"
-    path.write_bytes("🎉x".encode())
-
-    # A limit smaller than one character can never advance; the floor of one
-    # whole character keeps pagination moving.
-    piece = read_slice(path, offset=0, limit=1)
-    assert piece.text == "🎉"
-    assert piece.next_offset == 4
-
-    rest = read_slice(path, offset=piece.next_offset, limit=1)
-    assert rest.text == "x"
-    assert rest.eof is True
-
-
-def test_read_slice_invalid_bytes_still_progress(tmp_path: Path):
-    # Raw terminal output isn't guaranteed UTF-8: an invalid byte can never
-    # complete into a character, so it must be replaced and passed, not
-    # trimmed forever.
-    path = tmp_path / "log.txt"
-    path.write_bytes(b"ok\xff")
-
-    piece = read_slice(path, offset=0, limit=100)
-    assert piece.text == "ok�"
-    assert piece.next_offset == 3
-    assert piece.eof is True
-
-    # A surrogate prefix (ED A0) has a valid lead but can never complete;
-    # trimming it would stall the reader at offset 2 forever.
-    path.write_bytes(b"ok\xed\xa0")
-    stuck = read_slice(path, offset=0, limit=100)
-    assert stuck.text[:2] == "ok"
-    assert stuck.next_offset == 4
-    assert stuck.eof is True
-
-
-def test_read_slice_live_tail_re_covers_a_mid_write_character(tmp_path: Path):
-    path = tmp_path / "live.txt"
-    path.write_bytes(b"ab" + "🎉".encode()[:2])  # the writer is mid-emoji
-
-    piece = read_slice(path, offset=0, limit=100)
-    assert piece.text == "ab"
-    assert piece.next_offset == 2
-    assert piece.eof is False  # the character isn't whole yet
-
-    path.write_bytes(b"ab" + "🎉".encode())
-    rest = read_slice(path, offset=piece.next_offset, limit=100)
-    assert rest.text == "🎉"
-    assert rest.eof is True
+    tail = read_slice(path, offset=-5, limit=5)
+    assert tail.offset == 6
+    assert tail.text == "world"
+    assert tail.has_earlier is True
+    assert tail.eof is True
 
 
 def test_read_slice_missing_file_is_an_empty_eof(tmp_path: Path):

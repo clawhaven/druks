@@ -126,44 +126,18 @@ def _status(
     )
 
 
-def _continuation_prefix(payload: bytes) -> int:
-    # Bytes of a split character's tail at the head of a mid-file slice.
-    length = 0
-    while length < min(3, len(payload)) and payload[length] & 0xC0 == 0x80:
-        length += 1
-    return length
-
-
-def _complete_prefix(payload: bytes) -> bytes:
-    # Drop a trailing sequence the window truncated mid-character so the next
-    # read re-covers it; a genuinely invalid byte is kept (decode replaces it)
-    # so pagination never stalls. The decoder tells the two apart.
-    try:
-        payload.decode("utf-8")
-    except UnicodeDecodeError as error:
-        if error.reason == "unexpected end of data":
-            return payload[: error.start]
-    return payload
-
-
 def read_slice(path: Path, *, offset: int, limit: int) -> TextSlice:
-    # A bounded slice of a text file snapped to UTF-8 boundaries; the next read
-    # re-covers trimmed bytes. Negative offset reads the tail; missing file is
-    # an empty eof slice.
+    # A bounded byte window of a text file. A multibyte character split at a
+    # window seam shows one � — the live tail below does the same. Negative
+    # offset reads the tail; missing file is an empty eof slice.
     if not path.exists():
         return TextSlice(offset=0, next_offset=0, eof=True, has_earlier=False, text="")
-    limit = max(limit, 4)  # any character fits, so a trim always leaves progress
     size = path.stat().st_size
     if offset < 0:
         offset = max(size + offset, 0)
     with path.open("rb") as handle:
         handle.seek(offset)
         payload = handle.read(limit)
-    if offset:
-        lead = _continuation_prefix(payload)
-        offset += lead
-        payload = payload[lead:]
-    payload = _complete_prefix(payload)
     next_offset = offset + len(payload)
     return TextSlice(
         offset=offset,
