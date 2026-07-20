@@ -7,7 +7,7 @@ from pydantic import Field, SerializeAsAny
 from druks.harnesses.artifacts import normalize_token_usage
 from druks.schemas import BaseResponse
 
-from .enums import AgentCallStatus, RunState
+from .enums import RunState
 from .models import AgentCall, Artifact, Run
 
 
@@ -28,17 +28,6 @@ def _token_usage(cost_metadata: dict | None) -> TokenUsage | None:
 def get_display_label(kind: str) -> str:
     # "build.build_workflow" → "Build workflow"; "implement" → "Implement".
     return kind.rsplit(".", 1)[-1].replace("_", " ").capitalize()
-
-
-def _derived_status(call: AgentCall) -> str:
-    # Liveness is derived, not stored: an unfinished call reads "running" while its
-    # run is active and "abandoned" once the run is terminal (the run ended without
-    # the call closing). A finished call keeps its recorded outcome.
-    if call.finished_at:
-        return AgentCallStatus(call.status).value
-    if call.run.is_active:
-        return "running"
-    return "abandoned"
 
 
 class AgentCallResponse(BaseResponse):
@@ -64,7 +53,7 @@ class AgentCallResponse(BaseResponse):
             agent=call.agent,
             label=get_display_label(call.agent) if call.agent else "Agent",
             account_username=call.account.username,
-            status=_derived_status(call),  # type: ignore[arg-type]
+            status=call.derived_status,  # type: ignore[arg-type]
             started_at=call.started_at,
             finished_at=call.finished_at,
             last_error=call.last_error,

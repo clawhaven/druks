@@ -253,6 +253,15 @@ class AgentCall(Base, Uuid7Pk):
     sandbox_host_id: Mapped[str]
 
     @property
+    def derived_status(self) -> str:
+        # Unfinished: "running" while the run is live, "abandoned" once it's terminal.
+        if self.finished_at:
+            return AgentCallStatus(self.status).value
+        if self.run.is_active:
+            return "running"
+        return "abandoned"
+
+    @property
     def artifact_dir(self) -> str:
         return str(load_settings().artifacts_dir / f"run-{self.run_id}")
 
