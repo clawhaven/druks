@@ -25,7 +25,7 @@ _ARTIFACT_CHUNK_BYTES = 4 * 1024
 _HISTORY_POINTS = 8
 
 
-def get_gate(run_id: str) -> schemas.GateDetail:
+def get_gate(run_id: str) -> schemas.GateResponse:
     run = Run.get(run_id)
     if not run:
         raise exceptions.RunNotFound(run_id)
@@ -34,7 +34,7 @@ def get_gate(run_id: str) -> schemas.GateDetail:
     ask = run.input_request
     if not ask or ask.get("presentation") != "in_app":
         raise exceptions.GateNotAnswerable(run_id)
-    return schemas.GateDetail(
+    return schemas.GateResponse(
         run_id=run.id,
         gate=run.input_gate,  # type: ignore[arg-type]
         parked_at=run.input_requested_at,  # type: ignore[arg-type]
@@ -45,13 +45,13 @@ def get_gate(run_id: str) -> schemas.GateDetail:
 
 async def answer_gate(
     run_id: str, *, parked_at: datetime, control: str, answers: dict[str, str], note: str
-) -> schemas.GateAnswerResult:
+) -> schemas.GateAnswerResponse:
     run = Run.get(run_id)
     if not run:
         raise exceptions.RunNotFound(run_id)
     db_session().expire(run)  # the receipt/park comparison must read fresh
     if run.answer_parked_at == parked_at:
-        return schemas.GateAnswerResult(
+        return schemas.GateAnswerResponse(
             run_id=run.id, parked_at=parked_at, result="already_answered"
         )
     if run.state != RunState.PENDING_INPUT.value:
@@ -66,15 +66,15 @@ async def answer_gate(
     except InvalidChoiceError as error:
         raise exceptions.InvalidGateAnswer(str(error)) from error
     await run.resume(**payload)
-    return schemas.GateAnswerResult(run_id=run.id, parked_at=parked_at, result="answered")
+    return schemas.GateAnswerResponse(run_id=run.id, parked_at=parked_at, result="answered")
 
 
-def get_agent_call(call_id: str) -> schemas.AgentCallDetail:
+def get_agent_call(call_id: str) -> schemas.AgentCallDetailResponse:
     call = AgentCall.get(call_id)
     if not call:
         raise exceptions.AgentCallNotFound(call_id)
     layout = call.artifact_layout
-    return schemas.AgentCallDetail(
+    return schemas.AgentCallDetailResponse(
         run_id=call.run_id,
         call=AgentCallResponse.from_call(call),
         transcript=read_slice(
@@ -85,16 +85,16 @@ def get_agent_call(call_id: str) -> schemas.AgentCallDetail:
     )
 
 
-async def cancel_run(run_id: str, *, reason: str) -> schemas.CancelRunResult:
+async def cancel_run(run_id: str, *, reason: str) -> schemas.CancelRunResponse:
     run = Run.get(run_id)
     if not run:
         raise exceptions.RunNotFound(run_id)
     if run.state == RunState.CANCELLED.value:
-        return schemas.CancelRunResult(run_id=run.id, result="already_cancelled")
+        return schemas.CancelRunResponse(run_id=run.id, result="already_cancelled")
     if not run.is_active:
         raise exceptions.RunNotActive(run_id)
     await run.cancel(failure=reason)
-    return schemas.CancelRunResult(run_id=run.id, result="cancelled")
+    return schemas.CancelRunResponse(run_id=run.id, result="cancelled")
 
 
 def _artifact_content(artifact: Artifact | None) -> schemas.ArtifactContent | None:
@@ -112,7 +112,7 @@ def _artifact_content(artifact: Artifact | None) -> schemas.ArtifactContent | No
     )
 
 
-def get_usage(account: Account) -> schemas.AgentUsage:
+def get_usage(account: Account) -> schemas.AgentUsageResponse:
     now = datetime.now(UTC)
     timezone, local_start = operator_local_day(UserSettings.get().timezone, now)
     rows = list_finished_calls(account.id, since=local_start, until=local_start + timedelta(days=1))
@@ -124,7 +124,7 @@ def get_usage(account: Account) -> schemas.AgentUsage:
         usage = normalize_token_usage(cost_metadata)
         if usage:
             tokens += usage["total_tokens"]
-    return schemas.AgentUsage(
+    return schemas.AgentUsageResponse(
         day=local_start.date().isoformat(),
         timezone=str(timezone),
         spend_today_usd=round(spend, 4),

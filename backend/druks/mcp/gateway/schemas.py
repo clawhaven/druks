@@ -16,7 +16,7 @@ class ArtifactContent(BaseResponse):
     content: str
 
 
-class GateDetail(BaseResponse):
+class GateResponse(BaseResponse):
     # parked_at is the park identity answer_gate must echo back.
     run_id: str
     gate: str
@@ -25,7 +25,7 @@ class GateDetail(BaseResponse):
     artifact: ArtifactContent | None = None
 
 
-class GateAnswerResult(BaseResponse):
+class GateAnswerResponse(BaseResponse):
     run_id: str
     parked_at: datetime
     result: Literal["answered", "already_answered"]
@@ -40,7 +40,7 @@ class AnswerGateRequest(BaseModel):
     note: str = ""
 
 
-class AgentCallDetail(BaseResponse):
+class AgentCallDetailResponse(BaseResponse):
     run_id: str
     call: AgentCallResponse
     transcript: str
@@ -48,7 +48,7 @@ class AgentCallDetail(BaseResponse):
     artifact: ArtifactContent | None = None
 
 
-class CancelRunResult(BaseResponse):
+class CancelRunResponse(BaseResponse):
     run_id: str
     result: Literal["cancelled", "already_cancelled"]
 
@@ -68,7 +68,7 @@ class AgentHarnessUsage(BaseResponse):
     week_history: list[UsageHistoryPoint] = Field(default_factory=list)
 
 
-class AgentUsage(BaseResponse):
+class AgentUsageResponse(BaseResponse):
     day: str
     timezone: str
     spend_today_usd: float
