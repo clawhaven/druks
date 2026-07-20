@@ -233,29 +233,3 @@ class TextSlice(BaseResponse):
     eof: bool
     has_earlier: bool
     text: str
-
-
-class AgentCallSummary(BaseResponse):
-    # The bounded agent-surface cut of AgentCallResponse: the same facts with
-    # clipped free text and no token breakdown.
-    id: str
-    agent: str | None = None
-    account_username: str
-    status: Literal["running", "succeeded", "failed", "abandoned"]
-    started_at: datetime
-    finished_at: datetime | None = None
-    last_error: str | None = None
-    cost_usd: float | None = None
-
-    @classmethod
-    def from_call(cls, call: AgentCall) -> "AgentCallSummary":
-        return cls(
-            id=call.id,
-            agent=call.agent,
-            account_username=call.account.username,
-            status=_derived_status(call),  # type: ignore[arg-type]
-            started_at=call.started_at,
-            finished_at=call.finished_at,
-            last_error=call.last_error,
-            cost_usd=call.cost_usd,
-        )

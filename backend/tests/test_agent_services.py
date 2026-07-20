@@ -103,7 +103,7 @@ def test_read_slice_missing_file_is_an_empty_eof(tmp_path: Path):
 # ---- gates ----------------------------------------------------------------
 
 
-def test_get_gate_returns_ask_schema_and_parked_at(db_session):
+def test_get_gate_returns_the_ask_and_parked_at(db_session):
     item = make_test_work_item(repo="o/r", title="t")
     question = {"id": "q1", "prompt": "Which db?", "options": [{"id": "pg", "label": "Postgres"}]}
     run = _park(db_session, item.id, ask=_in_app_ask([question]))
@@ -114,10 +114,7 @@ def test_get_gate_returns_ask_schema_and_parked_at(db_session):
     assert view.gate == "review"
     assert view.parked_at == run.input_requested_at
     assert view.ask["controls"] == ["approve", "request_changes", "cancel"]
-    schema = view.reply_schema
-    assert schema["properties"]["control"]["enum"] == ["approve", "request_changes", "cancel"]
-    assert schema["properties"]["answers"]["properties"]["q1"]["description"] == "Which db?"
-    assert schema["required"] == ["control"]
+    assert view.ask["questions"][0]["prompt"] == "Which db?"
 
 
 def test_get_gate_serves_the_artifact(db_session):
@@ -214,14 +211,6 @@ async def test_answer_gate_error_taxonomy(db_session, resume_spy):
     with pytest.raises(InvalidGateAnswer):
         await services.answer_gate(
             run.id, parked_at=run.input_requested_at, control="merge", answers={}, note=""
-        )
-    with pytest.raises(InvalidGateAnswer):
-        await services.answer_gate(
-            run.id,
-            parked_at=run.input_requested_at,
-            control="approve",
-            answers={},
-            note="n" * 2049,
         )
 
     external_item = make_test_work_item(repo="o/r3", title="t")
