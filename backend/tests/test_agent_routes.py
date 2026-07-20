@@ -134,7 +134,7 @@ def test_answer_gate_reads_already_answered_off_the_receipt(
     parked_at = datetime.now(UTC)
     run = seed_build_run(db_session, work_item_id=item.id, state="running")
     run.input_requested_at = parked_at
-    run.answered_parked_at = parked_at
+    run.answer_parked_at = parked_at
     db_session.flush()
 
     response = client.post(
@@ -179,7 +179,7 @@ def test_cancel_run_route(client: TestClient, db_session):
 
     db_session.expire_all()
     run = db_session.get(type(run), run.id)
-    assert not run.answered_parked_at
+    assert not run.answer_parked_at
     assert not run.input_gate
     assert run.failure == "wrong branch"
 
@@ -230,7 +230,7 @@ def test_resume_route_contract_is_preserved(client: TestClient, db_session, resu
 
     # Once the answer has landed (receipt written, gate cleared), the
     # dashboard's double-submit stays the conflict it has always been.
-    run.answered_parked_at = run.input_requested_at
+    run.answer_parked_at = run.input_requested_at
     run.input_gate = None
     run.input_request = None
     db_session.flush()

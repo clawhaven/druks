@@ -100,7 +100,7 @@ async def answer_gate(
     # Same freshness discipline as notifications/services.py: the answer must
     # land on the run's live park, so the comparison reads fresh.
     db_session().expire(run)
-    if run.answered_parked_at == parked_at:
+    if run.answer_parked_at == parked_at:
         # The receipt names the parked_at an answer already resumed — a late
         # or duplicate answer collapses here instead of reading "not open".
         return GateAnswerResult(run_id=run.id, parked_at=parked_at, result="already_answered")

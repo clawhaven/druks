@@ -244,7 +244,7 @@ async def _park(
         workflow.workflow_id,
         RunState.RUNNING,
         subject=workflow.subject,
-        facts={**_GATE_CLEARED, "answered_parked_at": Run.input_requested_at},
+        facts={**_GATE_CLEARED, "answer_parked_at": Run.input_requested_at},
     )
     return payload
 

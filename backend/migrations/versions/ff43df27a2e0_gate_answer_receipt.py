@@ -21,9 +21,9 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.add_column(
         "durable_runs",
-        sa.Column("answered_parked_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("answer_parked_at", sa.DateTime(timezone=True), nullable=True),
     )
 
 
 def downgrade() -> None:
-    op.drop_column("durable_runs", "answered_parked_at")
+    op.drop_column("durable_runs", "answer_parked_at")

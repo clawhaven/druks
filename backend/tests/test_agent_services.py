@@ -263,7 +263,7 @@ async def test_answer_gate_uses_the_receipt_for_already_answered(db_session, res
     parked_at = datetime.now(UTC)
     run = seed_build_run(db_session, work_item_id=item.id, state="running")
     run.input_requested_at = parked_at
-    run.answered_parked_at = parked_at
+    run.answer_parked_at = parked_at
     db_session.flush()
 
     result = await services.answer_gate(

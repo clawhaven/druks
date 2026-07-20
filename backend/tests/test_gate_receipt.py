@@ -52,7 +52,7 @@ async def test_answer_stamps_the_receipt_beside_the_gate_clear(
     # The receipt is the round the answer cleared: the same stamp the park
     # wrote, which _GATE_CLEARED preserves on the row.
     assert run.input_requested_at
-    assert run.answered_parked_at == run.input_requested_at
+    assert run.answer_parked_at == run.input_requested_at
     assert not run.input_gate
     assert not run.input_request
 
@@ -68,7 +68,7 @@ async def test_timeout_never_writes_the_receipt(db_session, _direct_steps, monke
         await _park(_ParkedWorkflow(run.id), "review", _ASK, ttl_seconds=1.0)
 
     run = _reload(db_session, run.id)
-    assert not run.answered_parked_at
+    assert not run.answer_parked_at
     assert run.input_requested_at
 
 
@@ -83,4 +83,4 @@ async def test_cancel_never_writes_the_receipt(db_session, _direct_steps, monkey
         await _park(_ParkedWorkflow(run.id), "review", _ASK, ttl_seconds=1.0)
 
     run = _reload(db_session, run.id)
-    assert not run.answered_parked_at
+    assert not run.answer_parked_at

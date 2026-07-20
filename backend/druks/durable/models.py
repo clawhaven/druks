@@ -45,7 +45,7 @@ class Run(Base):
     # the answer path writes it (cancel and timeout never do), so a late
     # duplicate answer reads "already answered" instead of "not open". Wire
     # name: parked_at.
-    answered_parked_at: Mapped[datetime | None] = mapped_column(default=None)
+    answer_parked_at: Mapped[datetime | None] = mapped_column(default=None)
     failure: Mapped[str | None] = mapped_column(default=None)
     # The FatalError subtype's code when the run stopped on a deliberate domain
     # error, so read-sides tell e.g. a gate timeout from a crash without parsing
