@@ -41,10 +41,7 @@ class Run(Base):
     # When the run last asked for input — a historical fact (input_gate says
     # whether it's still waiting), and the one transition DBOS doesn't stamp.
     input_requested_at: Mapped[datetime | None] = mapped_column(default=None)
-    # The receipt: the input_requested_at stamp an answer last resumed. Only
-    # the answer path writes it (cancel and timeout never do), so a late
-    # duplicate answer reads "already answered" instead of "not open". Wire
-    # name: parked_at.
+    # The receipt: the input_requested_at stamp an answer last resumed.
     answer_parked_at: Mapped[datetime | None] = mapped_column(default=None)
     failure: Mapped[str | None] = mapped_column(default=None)
     # The FatalError subtype's code when the run stopped on a deliberate domain

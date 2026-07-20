@@ -235,11 +235,6 @@ async def _park(
     payload = await DBOS.recv_async(topic, timeout_seconds=ttl_seconds)
     if payload is None:
         raise GateTimeout(topic)
-    # Only this path — an answer landing — writes the receipt. The value is the
-    # row's own parked stamp, copied SQL-side inside the memoized transition
-    # step: a body-local timestamp would drift from the stored stamp when a
-    # crash replays this stretch. Timeout raises above; a cancel raises out of
-    # recv; the FAILED emit clears the gate without the receipt.
     await _emit_run_event(
         workflow.workflow_id,
         RunState.RUNNING,

@@ -1,6 +1,3 @@
-# Usage's shared read: an account's finished calls in a time window, as rows of
-# (model, cost_usd, cost_metadata, finished_at). The caller passes the
-# operator-local-day window, so every spend-today figure counts the same calls.
 from datetime import datetime
 
 from sqlalchemy import Row, select
