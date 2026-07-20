@@ -36,14 +36,9 @@ from druks.notifications.exceptions import InvalidChoiceError
 from druks.notifications.services import validate_in_app_answer
 from druks.schemas import clip
 from druks.usage.models import UsageScrape
-from druks.usage.reads import (
-    _HISTORY_POINTS,
-    FIVE_HOUR_RANGE,
-    WEEK_RANGE,
-    downsample,
-    list_finished_calls_today,
-)
+from druks.usage.reads import list_finished_calls_today
 from druks.usage.schemas import UsageHistoryPoint
+from druks.usage.trends import FIVE_HOUR_RANGE, WEEK_RANGE, downsample
 
 _TRANSCRIPT_TAIL_BYTES = 8 * 1024
 _STDERR_TAIL_BYTES = 4 * 1024
@@ -51,6 +46,8 @@ _ARTIFACT_CHUNK_BYTES = 4 * 1024
 _NOTE_BYTES = 2 * 1024
 _PROMPT_CLIP = 2 * 1024
 _OPTION_LABEL_CLIP = 256
+# Each usage trend stays this short so the whole response holds its byte budget.
+_HISTORY_POINTS = 8
 
 
 def _bounded_ask(ask: dict[str, Any]) -> dict[str, Any]:

@@ -8,7 +8,7 @@ from druks.harnesses.artifacts import normalize_token_usage
 from druks.harnesses.models import HarnessConnection
 from druks.harnesses.registry import get_harnesses
 from druks.usage.models import UsageScrape
-from druks.usage.reads import FIVE_HOUR_RANGE, WEEK_RANGE, downsample, list_finished_calls_today
+from druks.usage.reads import list_finished_calls_today
 from druks.usage.schemas import (
     UsageHarnessHistory,
     UsageHarnessSummary,
@@ -19,6 +19,7 @@ from druks.usage.schemas import (
     UsageResponse,
     UsageTodayResponse,
 )
+from druks.usage.trends import FIVE_HOUR_RANGE, WEEK_RANGE, downsample
 from druks.user_settings.models import HarnessSettings
 
 router = APIRouter(tags=["usage"])
