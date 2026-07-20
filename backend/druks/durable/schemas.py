@@ -53,7 +53,7 @@ class AgentCallResponse(BaseResponse):
             agent=call.agent,
             label=get_display_label(call.agent) if call.agent else "Agent",
             account_username=call.account.username,
-            status=call.derived_status,  # type: ignore[arg-type]
+            status=call.get_live_status(),  # type: ignore[arg-type]
             started_at=call.started_at,
             finished_at=call.finished_at,
             last_error=call.last_error,

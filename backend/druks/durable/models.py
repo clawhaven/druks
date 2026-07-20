@@ -252,8 +252,7 @@ class AgentCall(Base, Uuid7Pk):
     # and treat 404 as the host being gone.
     sandbox_host_id: Mapped[str]
 
-    @property
-    def derived_status(self) -> str:
+    def get_live_status(self) -> str:
         # Unfinished: "running" while the run is live, "abandoned" once it's terminal.
         if self.finished_at:
             return AgentCallStatus(self.status).value
