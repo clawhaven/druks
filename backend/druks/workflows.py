@@ -1,12 +1,12 @@
 import inspect
 import re
 from collections.abc import Callable
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from contextvars import ContextVar
 from datetime import UTC, datetime
 from functools import partial
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, ClassVar, Self, get_type_hints
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, TypeVar, get_args, get_type_hints
 
 from croniter import croniter
 from dbos import DBOS, SetEnqueueOptions, SetWorkflowAttributes, SetWorkflowID, StepOptions
@@ -50,7 +50,9 @@ __all__ = [
     "AgentCallStatus",
     "FatalError",
     "Gate",
+    "ReviewReply",
     "Run",
+    "RunRecord",
     "RunState",
     "SubjectActivity",
     "SubjectSummary",
@@ -67,13 +69,13 @@ if TYPE_CHECKING:
 # A human gate can park for days; a long recv TTL still caps zombie parks.
 GATE_TTL_SECONDS = 14 * 24 * 60 * 60
 
-# The controls an in-app review always offers. Framework-owned: an extension's agent
-# supplies the plan and questions (content), but the decision verbs are ours — so a
+# The decision verbs an in-app review offers. Framework-owned: an extension's
+# agent supplies the plan and questions (content), but the verbs are ours — so a
 # resume can only carry an action we defined, the line the resume endpoint checks.
-_REVIEW_CONTROLS = ("approve", "request_changes", "cancel")
-# The recv topic every in-app review parks on. A run parks on one gate at a time, so
-# one topic serves them all; Run.resume routes the reply back through it.
-_REVIEW_TOPIC = "review"
+_ReviewAction = Literal["approve", "request_changes", "cancel"]
+_REVIEW_CONTROLS = get_args(_ReviewAction)
+
+T = TypeVar("T")
 
 # The running workflow instance, so a Gate's on_wait() can reach its extension's
 # side-effects (set draft, request review, …) when the gate parks. No default:
@@ -163,6 +165,31 @@ def _kind_from_class_name(name: str) -> str:
     return _CAMEL_BOUNDARY.sub("_", name).lower()
 
 
+class RunRecord:
+    """The run's typed history — every body-level agent output and gate reply,
+    appended by the platform in call order, rebuilt identically on replay.
+    Authors project working state off it with ``list``/``latest``."""
+
+    def __init__(self) -> None:
+        self._entries: list[Any] = []
+
+    def _append(self, entry: Any) -> None:
+        self._entries.append(entry)
+
+    def list(self, contract: type[T], **filters: Any) -> list[T]:
+        return [
+            entry
+            for entry in self._entries
+            if isinstance(entry, contract)
+            and all(getattr(entry, name) == expected for name, expected in filters.items())
+        ]
+
+    def latest(self, contract: type[T], **filters: Any) -> T | None:
+        with suppress(IndexError):
+            return self.list(contract, **filters)[-1]
+        return
+
+
 class Gate(BaseModel):
     """A typed human-in-the-loop gate. Subclass per park point; the class name is
     the durable recv topic, the fields are the reply's schema. `wait()` parks the
@@ -207,7 +234,20 @@ class Gate(BaseModel):
 
         await DBOS.run_step_async(StepOptions(name=f"{cls.topic}._on_wait"), _on_wait)
         payload = await _park(workflow, cls.topic, input_request, ttl_seconds)
-        return cls.model_validate(payload)
+        reply = cls.model_validate(payload)
+        workflow.record._append(reply)
+        return reply
+
+
+class ReviewReply(Gate):
+    """The operator's in-app review decision. Answers and note are content for
+    the next agent prompt, never control flow."""
+
+    # One topic serves every in-app review — a run parks on one gate at a time.
+    topic = "review"
+    action: _ReviewAction
+    answers: dict[str, str] = Field(default_factory=dict)
+    note: str = ""
 
 
 async def _park(
@@ -477,6 +517,9 @@ class Workflow:
         # Who requested/triggered the run, replayed off the reserved input
         # key; None on system-owned runs (crons, old checkpoints).
         self.account_id: str | None = None
+        # The run's typed history, appended at the platform chokepoints —
+        # read, don't write; project with list/latest.
+        self.record = RunRecord()
         # Facts published with set_state, kept warm for sync reads (templates,
         # workspace kwargs); the durable copy is the run's DBOS events.
         self._state_facts: dict[str, Any] = {}
@@ -513,24 +556,26 @@ class Workflow:
 
         await DBOS.run_step_async(StepOptions(name="run.state", **_IO_RETRIES), _fan_out)
 
-    async def review(self, *, questions: list[BaseModel] | None = None) -> dict[str, Any]:
-        # Park for an in-app decision: the ask carries the controls and any questions;
-        # the reply is {action, answers, note} — an answer is an offered option id or
-        # the operator's own words, note their free-text remark. Both are content for
-        # the next agent prompt, never control flow (the resume endpoint holds the
-        # action to the offered controls). External gates use a Gate. The artifact the
-        # reviewer judges isn't named here — a parked run can't produce new ones, so
-        # the read side resolves the latest on demand.
+    async def review(self, *, questions: list[BaseModel] | None = None) -> ReviewReply:
+        # Park for an in-app decision: the ask carries the controls and any
+        # questions; the ReviewReply carries the operator's answer (the resume
+        # endpoint holds the action to the offered controls). External gates use
+        # a Gate. The artifact the reviewer judges isn't named here — a parked
+        # run can't produce new ones, so the read side resolves the latest on
+        # demand.
         if not self.subject:
             # An in-app review is answered from the subject's surfaces; a
             # subjectless run has none, so nobody would ever see the ask.
-            raise SubjectlessGate(_REVIEW_TOPIC)
+            raise SubjectlessGate(ReviewReply.topic)
         request = {
             "presentation": "in_app",
             "controls": list(_REVIEW_CONTROLS),
             "questions": [q.model_dump(mode="json") for q in questions or ()],
         }
-        return await _park(self, _REVIEW_TOPIC, request, GATE_TTL_SECONDS)
+        payload = await _park(self, ReviewReply.topic, request, GATE_TTL_SECONDS)
+        reply = ReviewReply.model_validate(payload)
+        self.record._append(reply)
+        return reply
 
     async def get_prompt_context(self, **context: Any) -> dict[str, Any]:
         # Everything an agent's template renders with, beyond the workflow and
@@ -635,7 +680,7 @@ class Workflow:
         # fails at start, not inside the run.
         # subject is required (no default) so a run can't silently lose its
         # timeline by omission — pass subject=None explicitly for a background run.
-        if account_id is None:
+        if not account_id:
             # Browser-origin starts inherit the request's authenticated account;
             # dispatchers that know better pass account_id explicitly.
             account_id = current_account_id.get()

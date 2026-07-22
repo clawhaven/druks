@@ -5,7 +5,7 @@ from druks.build.contracts import PlanData, QuestionOptionOutput, QuestionOutput
 from druks.build.enums import ReviewDecision
 from druks.build.policy import RepoPolicy
 from druks.build.workflows import Build, BuildWorkflow
-from druks.workflows import FatalError
+from druks.workflows import FatalError, ReviewReply
 
 
 async def test_plan_phase_threads_free_text_into_the_next_pass(monkeypatch):
@@ -48,13 +48,11 @@ async def test_plan_phase_threads_free_text_into_the_next_pass(monkeypatch):
 
     replies = iter(
         [
-            {
-                "action": "request_changes",
-                "answers": {"q1": "memcache — redis is banned here"},
-                "note": "",
-            },
-            {"action": "request_changes", "answers": {}, "note": "add a rollback section"},
-            {"action": "approve", "answers": {}, "note": ""},
+            ReviewReply(
+                action="request_changes", answers={"q1": "memcache — redis is banned here"}
+            ),
+            ReviewReply(action="request_changes", note="add a rollback section"),
+            ReviewReply(action="approve"),
         ]
     )
 
