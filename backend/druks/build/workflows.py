@@ -279,12 +279,12 @@ class BuildWorkflow(Workflow):
                 ):
                     return True
             reply = await self.review(questions=plan.questions)
-            if reply["action"] == "cancel":
+            if reply.action == "cancel":
                 raise FatalError("cancelled at plan review")
-            if reply["action"] == "approve" and not plan.questions:
+            if reply.action == "approve" and not plan.questions:
                 return True
-            answered = plan.get_answered(reply["answers"])
-            note = reply["note"]
+            answered = plan.get_answered(reply.answers)
+            note = reply.note
 
     async def _implement_phase(self) -> None:
         while True:
