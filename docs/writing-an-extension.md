@@ -136,8 +136,8 @@ attribution never changes that (two accounts starting the same subject share
 the one run). Wrap `start()` in a domain `dispatch()` method when the extension
 needs lookup, snapshot, or routing policy before launch.
 
-A browser-origin start attributes itself: the session gate stamps the
-request's signed-in account, and `start()` inherits it — a route that starts a
+A browser-origin start attributes itself: the request identity gate stamps
+the resolved account, and `start()` inherits it — a route that starts a
 workflow needs no ceremony. Pass `account_id` only when the dispatcher knows
 better (a webhook dispatch resolving the ticket assignee). Each agent call
 executes with the run's account's own connection, else the install's fallback

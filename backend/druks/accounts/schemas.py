@@ -12,6 +12,15 @@ class AccountResponse(BaseResponse):
     username: str
 
 
+class IdentityResponse(BaseResponse):
+    # What /api/auth/me answers: how this deployment authenticates, who the
+    # request resolved to (null in the none/zero setup state), and whether that
+    # identity still needs its first harness connection.
+    auth_mode: str
+    account: AccountResponse | None
+    onboarding_required: bool
+
+
 class PatResponse(BaseResponse):
     model_config = ConfigDict(from_attributes=True)
 

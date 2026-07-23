@@ -175,7 +175,7 @@ def rt():
     # An agent run checks the resolved harness is connected before any VM work;
     # AgentFlow's decider resolves to claude, so connect it for the module —
     # and mark the account as the execution fallback, the way the first
-    # login would.
+    # harness connection would.
     from druks.accounts.models import Account
     from druks.harnesses.models import HarnessConnection
     from druks.user_settings.models import UserSettings
