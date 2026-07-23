@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api } from '../api/client'
 import { ExtensionGlyph } from './ExtensionGlyph'
-import { LoginSteps, useHarnessLogin } from './HarnessLogin'
+import { ConnectSteps, useHarnessConnect } from './HarnessConnectFlow'
 import {
   type Harness,
   type ExtensionSettings,
@@ -767,12 +767,13 @@ export function HarnessConnect({ harness }: { harness: Harness }) {
   const [error, setError] = useState<string | null>(null)
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['harnesses'] })
-  const flow = useHarnessLogin(harness.name, async () => {
+  const flow = useHarnessConnect(harness.name, async () => {
     await refresh()
   })
 
   const disconnect = () => {
-    if (!window.confirm(`Disconnect ${harness.name}? You'll need to sign in again to run it.`)) return
+    if (!window.confirm(`Disconnect ${harness.name}? Reconnect it before agents can run on it.`))
+      return
     setBusy(true)
     setError(null)
     void api
@@ -808,7 +809,7 @@ export function HarnessConnect({ harness }: { harness: Harness }) {
           )}
         </span>
       </div>
-      <LoginSteps flow={flow} />
+      <ConnectSteps flow={flow} />
       {(error ?? flow.error) && <div className="hr-conn-error">{error ?? flow.error}</div>}
     </div>
   )
@@ -1462,8 +1463,8 @@ export function AgentAccessPane() {
       <div className="set-pane-head">
         <div className="set-pane-sub">
           Mint a <b>personal access token</b> for an agent to call this druks — sent as{' '}
-          <b>Authorization: Bearer …</b>, same account and authority as your session. Revoking a
-          token cuts its access immediately.
+          <b>Authorization: Bearer …</b>, same account and authority as your browser identity.
+          Revoking a token cuts its access immediately.
         </div>
       </div>
       <div className="set-group">

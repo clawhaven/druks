@@ -1,10 +1,10 @@
 import base64
 import logging
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import asyncssh
-from pydantic import BeforeValidator, Field
+from pydantic import BeforeValidator, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_DATA_DIR = Path("/var/lib/druks")
@@ -88,6 +88,16 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://druks:druks@localhost:5432/druks",
         alias="DRUKS_DATABASE_URL",
     )
+
+    # How a browser request resolves an account. ``none``: no authentication —
+    # loopback-only deployments with a single operator account. ``header``: the
+    # edge (exe.dev, Teleport, Cloudflare Access, …) authenticates and asserts
+    # the operator's email in ``auth_header``; druks maps it to an account.
+    # Bearer personal access tokens resolve first in either mode.
+    auth_mode: Literal["none", "header"] = Field(default="none", alias="DRUKS_AUTH_MODE")
+    # No default: the operator names their edge's header explicitly — druks
+    # blesses no provider.
+    auth_header: str = Field(default="", alias="DRUKS_AUTH_HEADER")
 
     webhook_secret: str = Field(default="", alias="DRUKS_WEBHOOK_SECRET")
     # Public hostname webhook senders POST to (Caddy serves it; see
@@ -196,6 +206,14 @@ class Settings(BaseSettings):
     )
 
     log_level: str = Field(default="INFO", alias="DRUKS_LOG_LEVEL")
+
+    @model_validator(mode="after")
+    def _header_mode_names_its_header(self) -> "Settings":
+        if self.auth_mode == "header" and not self.auth_header.strip():
+            raise ValueError(
+                "DRUKS_AUTH_HEADER must name the edge's identity header when DRUKS_AUTH_MODE=header"
+            )
+        return self
 
     @property
     def logs_dir(self) -> Path:

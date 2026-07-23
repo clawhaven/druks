@@ -5,7 +5,7 @@ import secrets
 from datetime import datetime
 
 from sqlalchemy import ForeignKey, Index, LargeBinary, String, select
-from sqlalchemy.dialects.postgresql import CITEXT
+from sqlalchemy.dialects.postgresql import CITEXT, insert
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from druks.accounts.constants import (
@@ -16,6 +16,7 @@ from druks.accounts.constants import (
     PAT_PREFIX_LENGTH,
     PAT_SECRET_BYTES,
     PAT_TOKEN_TAG,
+    SYSTEM_ACCOUNT_ID,
 )
 from druks.accounts.exceptions import InvalidPatError
 from druks.core.models import Uuid7Pk
@@ -46,14 +47,24 @@ class Account(Base, Uuid7Pk):
 
     @classmethod
     def get_or_create(cls, username: str) -> "Account":
+        """Concurrency-safe lookup-or-create: racing requests both INSERT with
+        ON CONFLICT DO NOTHING, then converge on the one row through the
+        canonical CITEXT lookup."""
         account = cls.get_for_username(username)
         if account:
             return account
-        account = cls(username=username)
         session = db_session()
-        session.add(account)
-        session.flush()
-        return account
+        session.execute(
+            insert(cls)
+            .values(username=username)
+            .on_conflict_do_nothing(index_elements=["username"])
+        )
+        return session.scalars(select(cls).where(cls.username == username)).one()
+
+    @classmethod
+    def list_non_system(cls) -> list["Account"]:
+        stmt = select(cls).where(cls.username != SYSTEM_ACCOUNT_ID).order_by(cls.created_at)
+        return list(db_session().scalars(stmt))
 
 
 def _hash_token(token: str) -> bytes:

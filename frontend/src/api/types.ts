@@ -209,7 +209,7 @@ export interface Harness {
   fastMode: boolean
   effort: string
   timeout: number
-  // The signed-in account's own connection; false until this account connects.
+  // The requesting account's own connection; false until this account connects.
   connected: boolean
   kind: string | null
   account: string | null
@@ -223,11 +223,20 @@ export interface Account {
   username: string
 }
 
-export interface LoginChallenge {
+/** What /api/auth/me answers: how this deployment authenticates, who the
+ * request resolved to (null in the none/zero setup state), and whether that
+ * identity still needs its first harness connection. */
+export interface Identity {
+  authMode: 'none' | 'header'
+  account: Account | null
+  onboardingRequired: boolean
+}
+
+export interface ConnectChallenge {
   authorizeUrl: string
   /** Opaque id of this connect attempt; passed back on complete so
-   * concurrent sign-ins never clobber each other's pending state. */
-  loginId: string
+   * concurrent connects never clobber each other's pending state. */
+  connectionId: string
 }
 
 export interface UpdateHarnessRequest {
@@ -346,7 +355,7 @@ export interface UsageHarnessSummary {
   // and legends key off it.
   name: string
   available: boolean
-  /** The signed-in account has its own connection; false renders a connect action. */
+  /** The requesting account has its own connection; false renders a connect action. */
   connected: boolean
   planTier: string | null
   fiveHour: UsageMetric | null

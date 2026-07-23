@@ -1,4 +1,22 @@
+import pytest
 from druks.settings import Settings, ensure_data_dirs, load_settings
+from pydantic import ValidationError
+
+
+def test_auth_defaults_to_none_and_blesses_no_header(tmp_path, monkeypatch):
+    monkeypatch.setenv("DRUKS_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("DRUKS_AUTH_MODE", raising=False)
+    monkeypatch.delenv("DRUKS_AUTH_HEADER", raising=False)
+    settings = load_settings()
+    assert settings.auth_mode == "none"
+    assert not settings.auth_header
+
+
+@pytest.mark.parametrize("auth_header", ["", "   "])
+def test_header_mode_requires_the_operator_to_name_the_header(tmp_path, monkeypatch, auth_header):
+    monkeypatch.setenv("DRUKS_DATA_DIR", str(tmp_path))
+    with pytest.raises(ValidationError):
+        Settings(auth_mode="header", auth_header=auth_header)  # type: ignore[call-arg]
 
 
 def test_ensure_data_dirs_provisions_skills_dir(tmp_path, monkeypatch):

@@ -82,7 +82,11 @@ def test_openapi_pins_the_five_agent_routes(client: TestClient):
 
 
 def test_agent_routes_sit_behind_the_gate(tmp_path, db_session):
-    app = configure_app_for_test(settings=make_settings(tmp_path), authenticated=False)
+    # Header mode: an unasserted request is a 401, not none-mode's setup 409.
+    app = configure_app_for_test(
+        settings=make_settings(tmp_path, auth_mode="header", auth_header="X-Edge-Email"),
+        authenticated=False,
+    )
     with TestClient(app) as anonymous:
         assert anonymous.get("/api/gates/x").status_code == 401
         assert anonymous.get("/api/usage/summary").status_code == 401

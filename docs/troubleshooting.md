@@ -66,24 +66,38 @@ The installer performs these steps in this order.
 
 ## The dashboard is inaccessible
 
-The shipped remote edge admits any request whose configured
-`DRUKS_AUTH_HEADER` carries a nonempty trusted identity; from there the app
-itself asks you to connect a harness, which mints the session cookie. A
-redirect to `__exe.dev/login` means no trusted identity header reached Caddy.
-A dashboard that loads but immediately shows the connect screen means the
-session cookie is missing or expired — sign in with Codex or Claude again
-(Redis loss signs everyone out but never touches stored credentials).
+The edge authenticates; Druks maps its asserted identity to an account.
+Distinguish the failure by what you see:
+
+- **A redirect to `__exe.dev/login`** — no trusted identity header reached
+  Caddy; sign in at the edge.
+- **A "couldn't resolve your identity" page (`header` mode 401)** — the
+  request reached Druks without exactly one nonblank `DRUKS_AUTH_HEADER`
+  value. Confirm the proxy injects the header Druks expects, and that
+  nothing between them drops or duplicates it.
+- **Onboarding ("connect a harness to finish setup")** — identity resolved
+  but that account has no harness connection yet; in a fresh `none`-mode
+  install the first completed connection creates the operator account.
+  Ordinary API calls answer 409 until then.
+- **A 503 (or refused startup) in `none` mode** — more than one non-system
+  account exists. Druks refuses to guess which is the operator; remove the
+  extras or switch to `header` mode.
+- **Runs refusing to start** — identity is fine; the selected harness is not
+  connected (see below).
+
+Redis loss does not sign browsers out — there are no sessions. It only drops
+in-flight connect attempts and other transient coordination.
 
 Check:
 
 ```bash
-grep -E '^(DRUKS_AUTH_HEADER|DRUKS_UPSTREAM)=' ~/druks/.env
+grep -E '^(DRUKS_AUTH_MODE|DRUKS_AUTH_HEADER|DRUKS_UPSTREAM)=' ~/druks/.env
 docker compose logs --tail=200 caddy web
 ```
 
 The local `docker` profile intentionally skips Caddy; use
-<http://127.0.0.1:8001>. It has no application login and should remain
-loopback-only.
+<http://127.0.0.1:8001>. It runs `DRUKS_AUTH_MODE=none` — no authentication —
+and must remain loopback-only.
 
 ## Webhooks are not arriving
 

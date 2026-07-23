@@ -5,9 +5,6 @@ from datetime import timedelta
 # start; no provider email ever collides with it.
 SYSTEM_ACCOUNT_ID = "system"
 
-# A signed-in session in Redis: token -> account_id.
-SESSION_PREFIX = "druks:session:"
-
 # A personal access token serializes as druks_pat_<prefix>_<secret>. The prefix
 # is the row's lookup key and the only part that may appear in errors, logs, or
 # lists; the secret exists only inside the copy-once plaintext.
