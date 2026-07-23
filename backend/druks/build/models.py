@@ -14,7 +14,7 @@ from druks.ticketing.datastructures import Ticket
 from druks.ticketing.enums import SemanticStatus
 from druks.ticketing.exceptions import TrackerNotConfigured
 from druks.ticketing.helpers import get_tracker, is_tracker_source
-from druks.workflows import Run
+from druks.workflows import FatalError, Run
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +138,19 @@ class ProjectRepo(Base):
     def get_for_repo(cls, full_name: str) -> "ProjectRepo | None":
         stmt = select(cls).where(func.lower(cls.full_name) == full_name.lower()).limit(1)
         return db_session().scalars(stmt).first()
+
+    @classmethod
+    def require_for_repo(cls, full_name: str) -> "ProjectRepo":
+        # A run's stored repo name can outlive its registration — a rename or a
+        # GitHub transfer leaves the old full_name behind, and the lookup matches
+        # the literal string. Fail with the reason, not an opaque NoneType.
+        repo = cls.get_for_repo(full_name)
+        if not repo:
+            raise FatalError(
+                f"{full_name!r} is not a registered project repo — it may have been "
+                "renamed or transferred; re-register it under its current name"
+            )
+        return repo
 
     @classmethod
     def lookup(
