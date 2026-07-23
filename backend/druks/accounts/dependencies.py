@@ -4,7 +4,12 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from druks.accounts.context import current_account_id
-from druks.accounts.exceptions import AuthConfigurationError, InvalidPatError
+from druks.accounts.exceptions import (
+    AuthConfigurationError,
+    InvalidAssertionError,
+    InvalidPatError,
+)
+from druks.accounts.jwt import verify_assertion
 from druks.accounts.models import Account, PersonalAccessToken
 
 _BEARER_CHALLENGE = 'Bearer realm="druks"'
@@ -44,14 +49,20 @@ def resolve_single_operator() -> Account | None:
     return operators[0] if operators else None
 
 
-def _resolve_operator(request: Request) -> Account | None:
-    """None only during none/zero setup. Header mode open-enrolls the edge's
-    asserted email; none mode ignores the header entirely."""
+async def _resolve_operator(request: Request) -> Account | None:
+    """None only during none/zero setup. header maps the asserted email; jwt
+    maps its verified identity claim; none ignores the header entirely."""
     settings = request.app.state.settings
     if settings.auth_mode == "none":
         return resolve_single_operator()
     values = request.headers.getlist(settings.auth_header)
-    if len(values) == 1 and (email := values[0].strip()):
+    if len(values) == 1 and (asserted := values[0].strip()):
+        if settings.auth_mode == "header":
+            return Account.get_or_create(asserted)
+        try:
+            email = await verify_assertion(asserted, settings)
+        except InvalidAssertionError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
         return Account.get_or_create(email)
     raise HTTPException(
         status_code=401,
@@ -77,7 +88,7 @@ async def current_account(
     if "Authorization" in request.headers:
         account = resolve_pat_account(bearer)
     else:
-        account = _resolve_operator(request)
+        account = await _resolve_operator(request)
         if not account:
             raise HTTPException(
                 status_code=409,
@@ -95,7 +106,7 @@ async def current_session_account(request: Request) -> AsyncIterator[Account]:
     """The signed-in human, never a bearer — a token cannot manage
     capabilities. Identity re-asserts per request; no session state."""
     _require_no_bearer(request)
-    account = _resolve_operator(request)
+    account = await _resolve_operator(request)
     if not account:
         raise HTTPException(
             status_code=409,
@@ -112,7 +123,7 @@ async def current_session_or_setup(request: Request) -> AsyncIterator[Account | 
     """The signed-in human; None during none/zero setup, where the first
     completed connection creates the operator."""
     _require_no_bearer(request)
-    account = _resolve_operator(request)
+    account = await _resolve_operator(request)
     token = current_account_id.set(account.id if account else None)
     try:
         yield account
@@ -129,7 +140,7 @@ async def current_account_or_setup(
     if "Authorization" in request.headers:
         account = resolve_pat_account(bearer)
     else:
-        account = _resolve_operator(request)
+        account = await _resolve_operator(request)
     token = current_account_id.set(account.id if account else None)
     try:
         yield account

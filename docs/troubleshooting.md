@@ -75,6 +75,12 @@ Distinguish the failure by what you see:
   request reached Druks without exactly one nonblank `DRUKS_AUTH_HEADER`
   value. Confirm the proxy injects the header Druks expects, and that
   nothing between them drops or duplicates it.
+- **An "Assertion rejected: …" 401 (`jwt` mode)** — the edge asserted a token
+  Druks could not verify. The named failure class says which check failed:
+  signature or key problems point at `DRUKS_AUTH_JWKS_URL` (is it reachable
+  from the container? did the edge rotate keys?), issuer/audience mismatches
+  at the `DRUKS_AUTH_JWT_*` values, and expiry classes at clock skew between
+  edge and host.
 - **Onboarding ("connect a harness to finish setup")** — identity resolved
   but that account has no harness connection yet; in a fresh `none`-mode
   install the first completed connection creates the operator account.
