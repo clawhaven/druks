@@ -46,6 +46,19 @@ GITHUB_MCP_NAME = "github"
 GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 
 
+def _registered_target(full_name: str) -> ProjectRepo:
+    # A run's stored repo name can outlive its registration — a rename or a
+    # GitHub transfer leaves the old full_name behind, and lookups match the
+    # literal string. Fail with the reason instead of an opaque NoneType.
+    target = ProjectRepo.get_for_repo(full_name)
+    if not target:
+        raise FatalError(
+            f"{full_name!r} is not a registered project repo — it may have been "
+            "renamed or transferred; re-register it under its current name"
+        )
+    return target
+
+
 @dataclass(frozen=True, kw_only=True)
 class BuildWorkspace(RepoWorkspace):
     # The base RepoWorkspace brings the cloned repo + token; a build run adds the
@@ -231,8 +244,7 @@ class BuildWorkflow(Workflow):
     async def _load_policy_and_profile(self) -> dict[str, Any]:
         # One memoized read: the live policy + the repo's profiled facts.
         policy = await RepoPolicy.resolve(self.input.repo)
-        # A build dispatches against a work item whose repo is registered.
-        target = ProjectRepo.get_for_repo(self.input.repo)
+        target = _registered_target(self.input.repo)
         return {
             "policy": policy.model_dump(mode="json"),
             "profile": target.effective_profile(),
@@ -540,8 +552,7 @@ class Scope(Workflow):
             for r in item.project.repos
             if r.full_name != item.repo
         ]
-        # The ticket routed through this repo to exist, so it's registered.
-        target = ProjectRepo.get_for_repo(item.repo)
+        target = _registered_target(item.repo)
         settings = Build.settings()
         return {
             "target_repo": item.repo,

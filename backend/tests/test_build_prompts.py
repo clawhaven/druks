@@ -5,8 +5,10 @@ from types import SimpleNamespace
 import pytest
 from druks.build import workflows as build_workflows
 from druks.build.journal import BuildJournal
+from druks.build.models import Project, ProjectRepo
 from druks.build.prompt_context import BuildPromptContext
 from druks.prompts import render_prompt
+from druks.workflows import FatalError
 
 _OP_TEMPLATES = [
     "generate_plan.md",
@@ -178,3 +180,18 @@ def test_build_prompt_context_covers_template_attrs():
     fields = set(BuildPromptContext.__dataclass_fields__)
     missing = sorted(a for a in attrs if a not in fields)
     assert not missing, f"BuildPromptContext missing template attrs: {missing}"
+
+
+def test_registered_target_returns_the_repo(db_session):
+    project = Project.create(name="acme/widget")
+    ProjectRepo.create(project_id=project.id, full_name="acme/widget")
+    assert build_workflows._registered_target("acme/widget").full_name == "acme/widget"
+
+
+def test_registered_target_fails_clearly_when_the_repo_was_transferred(db_session):
+    # Registered under the new name; a run still holding the old name must fail
+    # with the reason, not an opaque NoneType crash.
+    project = Project.create(name="czpython/druks")
+    ProjectRepo.create(project_id=project.id, full_name="czpython/druks")
+    with pytest.raises(FatalError, match="renamed or transferred"):
+        build_workflows._registered_target("clawhaven/druks")
