@@ -122,8 +122,8 @@ def _stub(monkeypatch, rt, *, plan_approval="human", auto_dispatch=False):
 
     for name in (
         "_push_ticket_status",
-        "_set_pr_draft",
-        "_request_assignee_review",
+        "set_pr_draft",
+        "request_assignee_review",
         "_clear_draft",
     ):
         monkeypatch.setattr(flow, name, _noop)

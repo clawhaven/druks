@@ -1,4 +1,5 @@
 import pytest
+from druks.durable.exceptions import WorkflowError
 from druks.workflows import Journal, OperatorReply
 from pydantic import BaseModel
 
@@ -45,6 +46,20 @@ def test_filters_are_flat_anded_equality():
 def test_a_filter_typo_raises_when_entries_scan():
     with pytest.raises(AttributeError):
         _journal().filter(Finding, verdict="success")
+
+
+def test_filter_after_anchors_by_identity_not_equality():
+    journal = Journal()
+    first = Finding(status="success")  # structurally equal twins — the anchor
+    second = Finding(status="success")  # must resolve by identity
+    journal.add(first)
+    journal.add(Grade(decision="approve"))
+    journal.add(second)
+    anchored = journal.filter(Finding, after=first)
+    assert len(anchored) == 1 and anchored[0] is second
+    assert journal.filter(Grade, after=second) == []
+    with pytest.raises(WorkflowError):
+        journal.filter(Finding, after=Finding(status="success"))
 
 
 def test_review_reply_validates_the_resume_wire_shape():

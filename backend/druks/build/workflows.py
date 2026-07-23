@@ -390,7 +390,7 @@ class BuildWorkflow(Workflow):
 
     @step
     async def _clear_draft(self) -> None:
-        await self._set_pr_draft(draft=False)
+        await self.set_pr_draft(draft=False)
 
     @step
     async def _push_ticket_status(self, status: SemanticStatus) -> None:
@@ -401,7 +401,7 @@ class BuildWorkflow(Workflow):
         if work_item:
             await work_item.set_remote_status(status)
 
-    async def _request_assignee_review(self) -> None:
+    async def request_assignee_review(self) -> None:
         login = self.journal.assignee_github_login
         if login and self.input.repo and self.pr_number:
             try:
@@ -416,7 +416,7 @@ class BuildWorkflow(Workflow):
                     self.pr_number,
                 )
 
-    async def _set_pr_draft(self, *, draft: bool) -> None:
+    async def set_pr_draft(self, *, draft: bool) -> None:
         if self.input.repo and self.pr_number:
             try:
                 await get_github_client(load_settings()).set_pull_request_draft_state(
