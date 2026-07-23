@@ -82,18 +82,18 @@ def _build_units():
         async def run(self, repo: str) -> None:
             decision = await self.DECIDER(body="x")
             # run()'s whole body is one step, so this agent call is in-step and
-            # must never land on the record — on the live or the replay pass.
-            SINK.append(f"instep-record:{len(self.record.list(Decision))}")
+            # must never land on the journal — on the live or the replay pass.
+            SINK.append(f"instep-journal:{len(self.journal.filter(Decision))}")
             if decision.action == "stop":
                 raise FatalError("stopped by agent")
 
     class AgentBodyFlow(Workflow):
-        # The record chokepoint: in run_multistep the agent call is body-level —
-        # its own step — so the platform records the domain value it returns.
+        # In run_multistep the agent call is body-level — its own step — so
+        # the platform journals the domain value it returns.
         async def run_multistep(self, repo: str) -> None:
             decision = await AgentFlow.DECIDER(body="x")
-            assert self.record.latest(Decision) is decision
-            SINK.append(f"body-record:{len(self.record.list(Decision))}:{decision.action}")
+            assert self.journal.latest(Decision) is decision
+            SINK.append(f"body-journal:{len(self.journal.filter(Decision))}:{decision.action}")
 
     class RecordFeedback(Workflow):
         @step
@@ -125,8 +125,8 @@ def _build_units():
             SINK.append(f"round1:{first.action}")
             second = await Approve.wait()
             SINK.append(f"round2:{second.action}")
-            replies = [reply.action for reply in self.record.list(Approve)]
-            SINK.append(f"gate-record:{replies}")
+            replies = [reply.action for reply in self.journal.filter(Approve)]
+            SINK.append(f"gate-journal:{replies}")
 
     class ConfirmFlow(Workflow):
         async def run_multistep(self) -> None:
@@ -390,8 +390,8 @@ async def test_duplicate_replies_to_one_round_collapse(rt):
     await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FINISHED)
     assert "round2:second" in SINK
     assert "round2:duplicate" not in SINK
-    # Both replies landed on the run record, in reply order.
-    assert "gate-record:['first', 'second']" in SINK
+    # Both replies landed on the journal, in reply order.
+    assert "gate-journal:['first', 'second']" in SINK
 
 
 async def test_fail_branch(rt):
@@ -508,7 +508,7 @@ async def test_run_agent_step(rt, monkeypatch):
     wfid = await rt.AgentFlow.start(subject=None, repo="owner/app")
     failed = await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FAILED)
     assert failed.failure == "stopped by agent"
-    assert "instep-record:0" in SINK  # an agent call inside run()'s step: never recorded
+    assert "instep-journal:0" in SINK  # an agent call inside run()'s step: never recorded
     assert seen and seen[0]["artifact_dir"].name == f"run-{wfid}"
     assert seen[0]["agent"] == "decider"
     session = get_session(rt.engine)
@@ -524,10 +524,10 @@ async def test_run_agent_step(rt, monkeypatch):
     assert pinned == [0]  # connection released while the agent runs
 
 
-async def test_body_level_agent_output_lands_on_the_record(rt, monkeypatch):
-    """The record chokepoint: a run_multistep body-level agent call appends the
-    domain value the body receives — AgentBodyFlow asserts identity in-body and
-    sinks the projection."""
+async def test_body_level_agent_output_lands_on_the_journal(rt, monkeypatch):
+    """A run_multistep body-level agent call lands the domain value the body
+    receives on the journal — AgentBodyFlow asserts identity in-body and sinks
+    the projection."""
     seen: list[dict] = []
     pinned: list[int] = []
     monkeypatch.setattr(
@@ -537,7 +537,7 @@ async def test_body_level_agent_output_lands_on_the_record(rt, monkeypatch):
 
     wfid = await rt.AgentBodyFlow.start(subject=None, repo="owner/app")
     await _wait_for(rt.engine, wfid, lambda r: r.state == RunState.FINISHED)
-    assert "body-record:1:ship" in SINK
+    assert "body-journal:1:ship" in SINK
 
 
 async def test_task_enqueue(rt):

@@ -45,7 +45,7 @@ WHAT TO LOOK FOR — beyond AC correctness, which is the evaluator's job, not yo
 - Comments and naming that lie or mislead — drift between what the comment claims and what the code does.
 
 WHAT NOT TO FLAG:
-- Anything the evaluator already covered (AC correctness, reviewer requirements). Don't relitigate.
+- Anything the evaluator already covered (AC correctness). Don't relitigate.
 - Style nits that don't change behavior or maintainability (whitespace, alphabetical import order, single vs double quote unless the repo enforces one).
 - "I would have done this differently" without a concrete reason tied to maintainability, performance, or correctness.
 - Pre-existing issues in unchanged code. You're reviewing the diff, not the codebase.

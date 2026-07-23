@@ -156,7 +156,7 @@ class Agent:
         )
         # Body-level only, on both passes: in-step calls hit the early return
         # live and are skipped with their step on replay.
-        workflow.record._append(result)
+        workflow.journal.add(result)
         return result
 
     async def _run(self, *, workflow_id: str, **context: Any) -> Any:

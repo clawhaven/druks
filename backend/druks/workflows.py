@@ -50,9 +50,9 @@ __all__ = [
     "AgentCallStatus",
     "FatalError",
     "Gate",
-    "ReviewReply",
+    "Journal",
+    "OperatorReply",
     "Run",
-    "RunRecord",
     "RunState",
     "SubjectActivity",
     "SubjectSummary",
@@ -165,18 +165,18 @@ def _kind_from_class_name(name: str) -> str:
     return _CAMEL_BOUNDARY.sub("_", name).lower()
 
 
-class RunRecord:
-    """The run's typed history — every body-level agent output and gate reply,
-    appended by the platform in call order, rebuilt identically on replay.
-    Authors project working state off it with ``list``/``latest``."""
+class Journal:
+    """The run's working memory. Druks adds each body-level agent output and
+    gate reply; a body adds its own derived values; subclass it for named
+    projections and declare yours via ``journal_class``."""
 
     def __init__(self) -> None:
         self._entries: list[Any] = []
 
-    def _append(self, entry: Any) -> None:
+    def add(self, entry: Any) -> None:
         self._entries.append(entry)
 
-    def list(self, contract: type[T], **filters: Any) -> list[T]:
+    def filter(self, contract: type[T], **filters: Any) -> list[T]:
         return [
             entry
             for entry in self._entries
@@ -186,7 +186,7 @@ class RunRecord:
 
     def latest(self, contract: type[T], **filters: Any) -> T | None:
         with suppress(IndexError):
-            return self.list(contract, **filters)[-1]
+            return self.filter(contract, **filters)[-1]
         return
 
 
@@ -235,11 +235,11 @@ class Gate(BaseModel):
         await DBOS.run_step_async(StepOptions(name=f"{cls.topic}._on_wait"), _on_wait)
         payload = await _park(workflow, cls.topic, input_request, ttl_seconds)
         reply = cls.model_validate(payload)
-        workflow.record._append(reply)
+        workflow.journal.add(reply)
         return reply
 
 
-class ReviewReply(Gate):
+class OperatorReply(Gate):
     """The operator's in-app review decision. Answers and note are content for
     the next agent prompt, never control flow."""
 
@@ -454,6 +454,8 @@ class Workflow:
     steps_reuse_sandbox: ClassVar[bool] = False
     # The Workspace subclass agents run in; an extension sets it (default: the bare VM).
     workspace_class: ClassVar[type[Workspace]] = Workspace
+    # The Journal subclass the run keeps; an extension sets it for named projections.
+    journal_class: ClassVar[type[Journal]] = Journal
     # Exactly one: run() is a single operation, auto-stepped, no ceremony.
     # run_multistep() orchestrates explicit @step calls and/or gates.
     run: ClassVar[Callable]
@@ -517,9 +519,7 @@ class Workflow:
         # Who requested/triggered the run, replayed off the reserved input
         # key; None on system-owned runs (crons, old checkpoints).
         self.account_id: str | None = None
-        # The run's typed history, appended at the platform chokepoints —
-        # read, don't write; project with list/latest.
-        self.record = RunRecord()
+        self.journal = self.journal_class()
         # Facts published with set_state, kept warm for sync reads (templates,
         # workspace kwargs); the durable copy is the run's DBOS events.
         self._state_facts: dict[str, Any] = {}
@@ -556,9 +556,12 @@ class Workflow:
 
         await DBOS.run_step_async(StepOptions(name="run.state", **_IO_RETRIES), _fan_out)
 
-    async def review(self, *, questions: list[BaseModel] | None = None) -> ReviewReply:
-        # Park for an in-app decision: the ask carries the controls and any
-        # questions; the ReviewReply carries the operator's answer (the resume
+    async def review(
+        self, *, questions: list[BaseModel] | None = None, context: str = ""
+    ) -> OperatorReply:
+        # Park for an in-app decision: the ask carries the controls, any
+        # questions, and optional context (rendered beside the reviewed
+        # document); the OperatorReply carries the operator's answer (the resume
         # endpoint holds the action to the offered controls). External gates use
         # a Gate. The artifact the reviewer judges isn't named here — a parked
         # run can't produce new ones, so the read side resolves the latest on
@@ -566,15 +569,17 @@ class Workflow:
         if not self.subject:
             # An in-app review is answered from the subject's surfaces; a
             # subjectless run has none, so nobody would ever see the ask.
-            raise SubjectlessGate(ReviewReply.topic)
+            raise SubjectlessGate(OperatorReply.topic)
         request = {
             "presentation": "in_app",
             "controls": list(_REVIEW_CONTROLS),
             "questions": [q.model_dump(mode="json") for q in questions or ()],
         }
-        payload = await _park(self, ReviewReply.topic, request, GATE_TTL_SECONDS)
-        reply = ReviewReply.model_validate(payload)
-        self.record._append(reply)
+        if context:
+            request["context"] = context
+        payload = await _park(self, OperatorReply.topic, request, GATE_TTL_SECONDS)
+        reply = OperatorReply.model_validate(payload)
+        self.journal.add(reply)
         return reply
 
     async def get_prompt_context(self, **context: Any) -> dict[str, Any]:

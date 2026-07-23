@@ -97,6 +97,8 @@ export interface InputRequest {
   controls?: string[]
   questions?: AskQuestion[]
   artifact_id?: string | null
+  /** Workflow-declared prose rendered beside the reviewed document. */
+  context?: string
 }
 
 // A call's renderable output, fetched to render inside an in-app review.

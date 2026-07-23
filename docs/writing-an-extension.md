@@ -146,41 +146,42 @@ visible by comparison. Runs with no account anywhere (crons, background work)
 run as the system account. Resuming a parked run keeps its original attribution;
 the person clicking Resume never becomes the payer.
 
-### The run record
+### The journal
 
-The platform records the run's typed history for you. Every body-level agent
-call appends the domain value the body receives (the post-`to_result()`
-output), and every gate reply appends its validated `Gate` instance —
-`review()`'s `ReviewReply` included — in call order, on `self.record`. Project
-working state off it instead of hand-maintaining collections:
+Druks keeps a journal of each run's typed values: every body-level agent call
+and every gate reply lands in it automatically, in call order. Add your own
+values with `self.journal.add()`; read them back by contract type:
 
 ```python
-self.record.list(PlanData)                     # ordered, all of them
-self.record.latest(PlanData)                   # newest or None
-self.record.list(ImplementationOutput, status="success")  # equality kwargs, ANDed
-self.record.latest(ReviewOutput, decision=ReviewDecision.APPROVE)
-self.record.list(ReviewWork)                   # gate replies: instances of the Gate class
+self.journal.filter(PlanData)                                # all entries, oldest first
+self.journal.latest(PlanData)                                # newest, or None
+self.journal.filter(ImplementationOutput, status="success")  # keyword filters: ANDed equality
+self.journal.filter(ReviewWork)                              # gate replies, by their Gate class
 ```
 
-Selection is by contract type, never by producer — two agents producing the
-same noun land in one projection. Filters are flat `attr=value` equality,
-ANDed, the `@subscribe`-filter idiom. That is the whole API: no `after=`, no
-windows, no ordinals. If a projection can't be written with `list`/`latest`,
-the value's meaning depends on record position — it isn't complete at birth;
-fix the contract, not the selector.
+Subclass `Journal` to name your projections, and declare it on the workflow:
 
-The record is rebuilt, not stored: recovery re-runs the body and feeds the
-identical memoized values through the identical chokepoints, so it rebuilds
-bit-for-bit. There is no second persistence path.
+```python
+class SweepJournal(Journal):
+    @property
+    def findings(self) -> list[FindingData]:
+        return self.filter(FindingData)
 
-The boundary: the record covers `run_multistep()` body-level calls. An agent
-call inside a `@step` — or anywhere in a `run()` body, which is one step
-whole — is never recorded, consistently on the live and replay passes. A
-`@step`'s own returns are plain dicts and rows with no contract type to select
-by; hold those in local variables or plain instance attributes, mutated only
-from body code. Never mutate such state from inside a `@step`: a completed
-step is skipped on replay, so a write made there silently vanishes from the
-rebuilt state.
+
+class Sweep(Workflow):
+    journal_class = SweepJournal
+```
+
+The journal survives crashes without being stored: recovery re-runs the body
+with every durable call memoized, so the same entries land in the same order.
+
+Two rules:
+
+- Only body-level calls are journaled. An agent call inside a `@step` — or in
+  a `run()` body, which is one big step — never lands there; keep that state
+  in local variables.
+- Never mutate body-held state inside a `@step`: a completed step is skipped
+  on replay, so the write disappears.
 
 ### Schedules and settings
 
