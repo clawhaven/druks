@@ -18,7 +18,7 @@ from druks.build.scoping.contracts import ScopeBriefOutput
 from druks.db import db_session
 from druks.events import Event, FeedItem
 from druks.extensions import Extension
-from druks.workflows import Run, RunState, SubjectActivity, get_run_phase
+from druks.workflows import Run, SubjectActivity, get_run_phase
 
 if TYPE_CHECKING:
     from druks.build.schemas import WorkItemSummary
@@ -185,7 +185,7 @@ class Build(Extension):
     def _work_item_id(event: Event) -> int | None:
         if event.subject_type == "work_item" and event.subject_id:
             return int(event.subject_id)
-        return None
+        return
 
     @classmethod
     def subject_summary(cls, subject_id: str) -> "WorkItemSummary | None":
@@ -213,13 +213,13 @@ class Build(Extension):
         from druks.build.scoping.workflows import Scope
 
         item = WorkItem.get(int(subject_id))
-        assert item is not None  # the read-side resolves the summary before the activity
-        run = item.get_build_run()
-        if not run:
-            scope_runs = Run.list_for_subject("work_item", str(item.id), kind=Scope.kind)
-            run = scope_runs[0] if scope_runs else None
-        # Only while a run is actually RUNNING — a run parked on a gate isn't working.
-        if not run or run.state != RunState.RUNNING.value:
-            return None
-        phase = await get_run_phase(run.id)
-        return _PHASE_META.get(phase or "")
+        if item:
+            run = item.get_build_run()
+            if not run:
+                scope_runs = Run.list_for_subject("work_item", str(item.id), kind=Scope.kind)
+                run = scope_runs[0] if scope_runs else None
+            # Only while a run is actually RUNNING — a run parked on a gate isn't working.
+            if run and run.is_running:
+                phase = await get_run_phase(run.id)
+                return _PHASE_META.get(phase or "")
+        return

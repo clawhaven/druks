@@ -24,8 +24,8 @@ class ReviewWork(Gate):
     @classmethod
     async def on_wait(cls, workflow: Workflow) -> None:
         build = cast("BuildWorkflow", workflow)
-        await build._set_pr_draft(draft=False)
-        await build._request_assignee_review()
+        await build.set_pr_draft(draft=False)
+        await build.request_assignee_review()
 
 
 class RepoProfilerOutput(AgentOutput):

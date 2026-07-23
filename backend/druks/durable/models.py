@@ -74,6 +74,10 @@ class Run(Base):
     def is_parked(self) -> bool:
         return self.state == RunState.PENDING_INPUT.value
 
+    @property
+    def is_running(self) -> bool:
+        return self.state == RunState.RUNNING.value
+
     @classmethod
     def create_row(cls, engine, *, workflow_id: str, kind: str, account_id: str | None) -> None:
         # Own committed transaction (not the caller's request txn) so the row

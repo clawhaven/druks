@@ -176,10 +176,17 @@ class Journal:
     def add(self, entry: Any) -> None:
         self._entries.append(entry)
 
-    def filter(self, contract: type[T], **filters: Any) -> list[T]:
+    def filter(self, contract: type[T], *, after: Any = None, **filters: Any) -> list[T]:
+        # ``after`` anchors by identity: only entries recorded after that exact entry.
+        entries = self._entries
+        if after:
+            if positions := [i for i, entry in enumerate(entries) if entry is after]:
+                entries = entries[positions[0] + 1 :]
+            else:
+                raise WorkflowError("after= must be an entry of this journal")
         return [
             entry
-            for entry in self._entries
+            for entry in entries
             if isinstance(entry, contract)
             and all(getattr(entry, name) == expected for name, expected in filters.items())
         ]
