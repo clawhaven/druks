@@ -227,7 +227,7 @@ export interface Account {
  * request resolved to (null in the none/zero setup state), and whether that
  * identity still needs its first harness connection. */
 export interface Identity {
-  authMode: 'none' | 'header'
+  authMode: 'none' | 'header' | 'jwt'
   account: Account | null
   onboardingRequired: boolean
 }

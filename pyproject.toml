@@ -47,6 +47,8 @@ Repository = "https://github.com/czpython/druks"
 
 [dependency-groups]
 dev = [
+    # Mints RS256 test tokens; production verifies via fastmcp's JWTVerifier.
+    "pyjwt[crypto]>=2.10",
     "pyright>=1.1.408",
     "pytest>=8.4.0",
     "pytest-asyncio>=1.3.0",
