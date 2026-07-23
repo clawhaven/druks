@@ -129,4 +129,13 @@ def test_ask_contracts_cap_identity_and_cardinality():
             plan_markdown="m",
             acceptance_criteria=[],
             questions=[O.QuestionOutput(id=f"q{i}", prompt="p", options=[]) for i in range(9)],
+            assignee_github_login=None,
         )
+
+
+def test_review_output_records_no_artifact():
+    # An artifact would displace the plan as the parked ask's document.
+    from druks.build.enums import ReviewDecision
+
+    grade = O.ReviewOutput(decision=ReviewDecision.REQUEST_CHANGES, body="name the wire schema")
+    assert grade.get_artifact() == {}

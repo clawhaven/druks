@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -8,16 +8,24 @@ from druks.build.enums import (
     HumanFeedbackAction,
     ReviewDecision,
 )
+from druks.workflows import Gate, Workflow
+
+if TYPE_CHECKING:
+    from druks.build.workflows import BuildWorkflow
 
 
-class HumanFeedback(BaseModel):
-    reviewer: str
-    body: str = ""
-    status: Literal["pending", "triaged"] = "pending"
-    triage_action: HumanFeedbackAction | None = None
-    triage_body: str = ""
-    question: str = ""
-    implementation_instructions: str = ""
+# The PR webhook resumes approve/request_changes; revise_contract and cancel
+# come from the operator's UI.
+class ReviewWork(Gate):
+    action: Literal["approve", "request_changes", "revise_contract", "cancel"]
+    reviewer: str | None = None
+    body: str | None = None
+
+    @classmethod
+    async def on_wait(cls, workflow: Workflow) -> None:
+        build = cast("BuildWorkflow", workflow)
+        await build._set_pr_draft(draft=False)
+        await build._request_assignee_review()
 
 
 class RepoProfilerOutput(AgentOutput):
@@ -77,6 +85,8 @@ class PlanData(BaseModel):
     plan_markdown: str = ""
     questions: list[QuestionOutput] = Field(default_factory=list)
     acceptance_criteria: list[AcceptanceCriterionOutput] = Field(default_factory=list)
+    # Resolved by the planner; a revision carries None.
+    assignee_github_login: str | None = None
 
     def get_answered(self, picks: dict[str, str]) -> list[dict[str, str]]:
         # Each question the operator answered, paired with its answer — what the
@@ -99,6 +109,9 @@ class PlanOutput(AgentOutput):
     plan_markdown: str
     acceptance_criteria: list[AcceptanceCriterionOutput]
     questions: list[QuestionOutput] = Field(max_length=8)
+    # Required but nullable: the planner always reports the field, null when it
+    # resolved no assignee login convincingly.
+    assignee_github_login: str | None
 
     def get_artifact(self) -> dict[str, str]:
         return {"kind": "markdown", "title": "Implementation plan", "content": self.plan_markdown}
@@ -108,6 +121,7 @@ class PlanOutput(AgentOutput):
             plan_markdown=self.plan_markdown,
             acceptance_criteria=self.acceptance_criteria,
             questions=self.questions,
+            assignee_github_login=self.assignee_github_login,
         )
 
 
@@ -130,17 +144,10 @@ class ContractRevisionOutput(AgentOutput):
 
 
 class ReviewOutput(AgentOutput):
-    # The plan-review agent can't COMMENT — that domain value is for human PR
-    # reviews, so the contract lists only the three the agent may return.
-    decision: Literal[
-        ReviewDecision.APPROVE,
-        ReviewDecision.APPROVE_WITH_REQUIRED_CHANGES,
-        ReviewDecision.REQUEST_CHANGES,
-    ]
+    # No get_artifact: the plan must stay the parked ask's resolved document;
+    # the fallback park sends the critique as ask context instead.
+    decision: Literal[ReviewDecision.APPROVE, ReviewDecision.REQUEST_CHANGES]
     body: str
-    # Required but nullable: the agent always reports the field, null when it
-    # resolved no assignee login convincingly.
-    assignee_github_login: str | None
 
 
 class TriageOutput(AgentOutput):

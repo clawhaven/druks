@@ -1,11 +1,11 @@
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
 from druks.accounts.models import Account
-from druks.build.contracts import HumanFeedback, ImplementationOutput
+from druks.build.contracts import ImplementationOutput, ReviewWork
 from druks.build.enums import (
     EvaluationVerdict,
     HumanFeedbackAction,
@@ -24,7 +24,7 @@ from druks.sandbox.layout import (
 from druks.settings import load_settings
 from druks.skills.models import Skill
 from druks.ticketing.enums import SemanticStatus
-from druks.workflows import FatalError, Gate, Workflow, step
+from druks.workflows import FatalError, Workflow, step
 
 from .extension import Build
 from .journal import BuildJournal
@@ -43,22 +43,6 @@ logger = logging.getLogger(__name__)
 # Its token is per-repo, minted from the reviewer app at workspace setup.
 GITHUB_MCP_NAME = "github"
 GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
-
-
-# Build's one external gate: code review happens on the PR. `action` spans the webhook's
-# review vocab (approve, request_changes — the only actions a resumer can send) plus the
-# operator's UI decisions (revise_contract, cancel). on_wait un-drafts the PR and pings
-# the assignee.
-class ReviewWork(Gate):
-    action: Literal["approve", "request_changes", "revise_contract", "cancel"]
-    reviewer: str | None = None
-    body: str | None = None
-
-    @classmethod
-    async def on_wait(cls, workflow: Workflow) -> None:
-        build = cast("BuildWorkflow", workflow)
-        await build._set_pr_draft(draft=False)
-        await build._request_assignee_review()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -91,6 +75,8 @@ class BuildWorkspace(RepoWorkspace):
 class BuildWorkflow(Workflow):
     steps_reuse_sandbox = True
     workspace_class = BuildWorkspace
+    journal_class = BuildJournal
+    journal: BuildJournal
 
     class Settings(BaseModel):
         auto_dispatch_on_plan_approval: bool = Field(
@@ -110,10 +96,6 @@ class BuildWorkflow(Workflow):
             title="Review code",
             description="Run the line-level reviewer after a passing evaluation.",
         )
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._journal = BuildJournal()
 
     @classmethod
     async def dispatch(
@@ -234,7 +216,7 @@ class BuildWorkflow(Workflow):
             task_owner_name=self.input.task_owner_name,
             task_owner_email=self.input.task_owner_email,
             related_repos=self._related_repos(),
-            journal=self._journal,
+            journal=self.journal,
         )
         return {
             "verification": await self._policy.verification_block(
@@ -261,24 +243,31 @@ class BuildWorkflow(Workflow):
         return self.settings()
 
     async def _plan_phase(self) -> bool:
-        """Plan → questions? park for the operator's answers and re-plan : approve.
-        True → implement; cancel raises."""
+        """Gate mode: plan → park. Auto mode: machine review with one bounded
+        redraft. True → implement; cancel raises."""
+        gate = self._policy.plan_approval_gate(self._settings.auto_dispatch_on_plan_approval)
         answered: list[dict[str, str]] = []
         note = ""
         while True:
-            plan = self._journal.add_plan(
-                await Build.generate_plan(answered_questions=answered, operator_note=note)
-            )
-            # No open questions and a clean grade under an auto-approve policy ships
-            # the plan without asking the operator.
-            if not plan.questions:
-                grade = self._journal.add_plan_review(await Build.review_plan())
-                if grade.decision == ReviewDecision.APPROVE and (
-                    self._policy.plan_approval_gate(self._settings.auto_dispatch_on_plan_approval)
-                    == "none"
-                ):
+            reviewer_notes = ""
+            redrafted = False
+            critique = ""
+            while True:
+                plan = await Build.generate_plan(
+                    answered_questions=answered, operator_note=note, reviewer_notes=reviewer_notes
+                )
+                if gate != "none" or plan.questions:
+                    break
+                grade = await Build.review_plan()
+                if grade.decision == ReviewDecision.APPROVE:
                     return True
-            reply = await self.review(questions=plan.questions)
+                if redrafted:
+                    # Exhausted — park below, critique on the ask.
+                    critique = grade.body
+                    break
+                redrafted = True
+                reviewer_notes = grade.body
+            reply = await self.review(questions=plan.questions, context=critique)
             if reply.action == "cancel":
                 raise FatalError("cancelled at plan review")
             if reply.action == "approve" and not plan.questions:
@@ -289,7 +278,7 @@ class BuildWorkflow(Workflow):
     async def _implement_phase(self) -> None:
         while True:
             await self.implement()
-            evaluation = self._journal.add_evaluation(await Build.evaluate_implementation())
+            evaluation = await Build.evaluate_implementation()
             if evaluation.verdict == EvaluationVerdict.PASS:
                 if self._settings.review_code:
                     await Build.review_code()
@@ -297,7 +286,7 @@ class BuildWorkflow(Workflow):
                     return
                 continue
             if evaluation.verdict == EvaluationVerdict.FAIL and (
-                self._journal.implementation_revision < self._settings.max_implementation_revisions
+                self.journal.implementation_revision < self._settings.max_implementation_revisions
             ):
                 continue
             if await self._work_gate():
@@ -315,9 +304,9 @@ class BuildWorkflow(Workflow):
         if decision.action == "approve":
             return await self._approved_work()
         if decision.action == "request_changes":
-            return await self._triage(decision)
+            return await self._triage()
         if decision.action == "revise_contract":
-            self._journal.add_plan(await Build.revise_contract())
+            await Build.revise_contract()
             return False
         if decision.action == "cancel":
             await self._push_ticket_status(SemanticStatus.CANCELED)
@@ -332,20 +321,20 @@ class BuildWorkflow(Workflow):
             await self._clear_draft()
         return True
 
-    async def _triage(self, decision: ReviewWork) -> bool:
-        feedback = self._journal.add_feedback(await self.triage_feedback(decision))
-        if feedback.triage_action == HumanFeedbackAction.CHANGE_REQUIRED:
+    async def _triage(self) -> bool:
+        feedback = await Build.triage_human_feedback()
+        if feedback.action == HumanFeedbackAction.CHANGE_REQUIRED:
             return False  # loop → implement
-        if feedback.triage_action == HumanFeedbackAction.CONTRACT_CHANGE_REQUIRED:
-            self._journal.add_plan(await Build.revise_contract())
+        if feedback.action == HumanFeedbackAction.CONTRACT_CHANGE_REQUIRED:
+            await Build.revise_contract()
             return False
-        if feedback.triage_action == HumanFeedbackAction.CLOSE:
+        if feedback.action == HumanFeedbackAction.CLOSE:
             raise FatalError("closed at human triage")
         # NO_CHANGE / QUESTION → re-park
         return await self._work_gate()
 
-    # Body code, never @step: the agent calls inside memoize themselves, and the
-    # journal writes + set_state must re-run on replay — a @step would skip them.
+    # Body code, never @step: the agent calls inside memoize themselves and land
+    # on the record, and set_state must re-run on replay — a @step would skip them.
     async def implement(self) -> ImplementationOutput:
         delivery = await Build.implement()
         # A bail is a stop, not a result: the implementer hit a contradiction in the
@@ -357,18 +346,7 @@ class BuildWorkflow(Workflow):
             # First delivery: the implementer provisioned the branch + draft PR alongside
             # its commits; publish the pair (the run.state signal mirrors it onto the item).
             await self.set_state(branch=delivery.branch, pr_number=delivery.pr_number)
-        return self._journal.add_implementation(delivery)
-
-    async def triage_feedback(self, decision: ReviewWork) -> HumanFeedback:
-        parsed = await Build.triage_human_feedback()
-        return HumanFeedback(
-            reviewer=decision.reviewer or "(triage)",
-            body=parsed.body,
-            triage_action=parsed.action,
-            triage_body=parsed.body,
-            question=parsed.question,
-            implementation_instructions=parsed.implementation_instructions,
-        )
+        return delivery
 
     @step
     async def merge(self) -> None:
@@ -424,7 +402,7 @@ class BuildWorkflow(Workflow):
             await work_item.set_remote_status(status)
 
     async def _request_assignee_review(self) -> None:
-        login = self._journal.assignee_github_login
+        login = self.journal.assignee_github_login
         if login and self.input.repo and self.pr_number:
             try:
                 await get_github_client(load_settings()).request_pull_request_reviewers(

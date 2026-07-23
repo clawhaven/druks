@@ -46,18 +46,6 @@
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if build.journal.reviewer_requirements() %}
-## Reviewer requirements (active)
-
-These are binding plan clarifications from the plan reviewer. Treat them as part of the plan and apply them.
-
-{% for req in build.journal.reviewer_requirements() %}
-### Requirement {{ loop.index }}
-
-{{ req.body.strip() }}
-
-{% endfor %}
-{% endif %}
 {% if build.journal.evaluations %}
 ## Prior implementation review
 
@@ -74,7 +62,7 @@ These are binding plan clarifications from the plan reviewer. Treat them as part
 ## Human feedback
 
 {% for fb in build.journal.human_feedback %}
-### {{ fb.reviewer }} — status: {{ fb.status }}
+### {{ fb.reviewer }}
 
 {% if fb.body %}
 **Body:** {{ fb.body.strip() }}

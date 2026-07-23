@@ -20,13 +20,13 @@ _OP_TEMPLATES = [
 
 # The kwargs the workflow passes at each template's agent call site.
 _CALL_KWARGS = {
-    "generate_plan.md": {"answered_questions": [], "operator_note": ""},
+    "generate_plan.md": {"answered_questions": [], "operator_note": "", "reviewer_notes": ""},
 }
 
 
 def _build() -> SimpleNamespace:
     """A stand-in BuildPromptContext exposing the fields the templates read —
-    identity facts faked, the journal real."""
+    identity facts faked, the journal real and empty."""
     return SimpleNamespace(
         repo="acme/widget",
         branch="agent/eng-1",
@@ -91,9 +91,43 @@ async def test_generate_plan_prompt_quotes_operator_content():
         workspace=_workspace(),
         answered_questions=[{"question": "Which cache?", "answer": "redis\nwith a 5m TTL"}],
         operator_note="Tighten the rollout.\nSplit phase 2.",
+        reviewer_notes="",
     )
     assert "> redis\n  > with a 5m TTL" in output
     assert "> Tighten the rollout.\n> Split phase 2." in output
+
+
+async def test_generate_plan_prompt_quotes_the_reviewer_critique():
+    output = await render_prompt(
+        "build/build_workflow/generate_plan.md",
+        build=_build(),
+        verification="VERIFICATION-BLOCK",
+        workspace=_workspace(),
+        answered_questions=[],
+        operator_note="",
+        reviewer_notes="Name the wire schema.\nSplit the migration.",
+    )
+    assert "## Plan reviewer critique" in output
+    assert "> Name the wire schema.\n> Split the migration." in output
+
+
+async def test_the_planner_resolves_the_assignee_not_the_reviewer():
+    # Only the planner always runs, so only its prompt owns the resolution.
+    planner = await render_prompt(
+        "build/build_workflow/generate_plan.md",
+        build=_build(),
+        verification="VERIFICATION-BLOCK",
+        workspace=_workspace(),
+        **_CALL_KWARGS["generate_plan.md"],
+    )
+    reviewer = await render_prompt(
+        "build/build_workflow/review_plan.md",
+        build=_build(),
+        verification="VERIFICATION-BLOCK",
+        workspace=_workspace(),
+    )
+    assert "ASSIGNEE RESOLUTION" in planner
+    assert "assignee_github_login" not in reviewer
 
 
 @pytest.mark.parametrize("template", _OP_TEMPLATES)
